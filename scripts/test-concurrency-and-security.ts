@@ -1,4 +1,5 @@
 import { getSafeRedirectPath } from "@/app/api/auth/callback/route";
+import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/config";
 import { db } from "@/lib/db/client";
 import { products, cartItems, orders, orderItems } from "@/lib/db/schema";
 import { createOrderFromCart, cancelOrder } from "@/services/order.service";
@@ -60,6 +61,48 @@ async function runRedirectSecurityTests() {
     getSafeRedirectPath("https://evil.com", "/dashboard") === "/dashboard",
     "Uses custom fallback when input is invalid"
   );
+}
+
+async function runSupabaseConfigTests() {
+  console.log("\n========================================================");
+  console.log("Suite 2: Supabase Environment Configuration Defense Tests");
+  console.log("========================================================");
+
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  try {
+    // 1. Accidental /rest/v1 appended (common dashboard copy-paste error causing 'Invalid path specified in request URL')
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co/rest/v1";
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Normalizes /rest/v1 suffix from Supabase URL");
+
+    // 2. Accidental /rest/v1/ with trailing slash
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co/rest/v1/";
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Normalizes /rest/v1/ with trailing slash");
+
+    // 3. Accidental /auth/v1 appended
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co/auth/v1";
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Normalizes /auth/v1 suffix from Supabase URL");
+
+    // 4. Wrapping quotes
+    process.env.NEXT_PUBLIC_SUPABASE_URL = '"https://example.supabase.co"';
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Strips wrapping double quotes");
+
+    // 5. Trailing slash
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co/";
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Strips trailing slash");
+
+    // 6. Whitespace and single quotes
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "  'https://example.supabase.co'  ";
+    assert(getSupabaseUrl() === "https://example.supabase.co", "Strips whitespace and single quotes");
+
+    // 7. Anon key quote stripping
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = ' "eyJhbGciOi..." ';
+    assert(getSupabaseAnonKey() === "eyJhbGciOi...", "Normalizes Anon Key quotes and whitespace");
+  } finally {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalKey;
+  }
 }
 
 async function runConcurrencyTests() {
@@ -290,6 +333,7 @@ async function main() {
 
   try {
     await runRedirectSecurityTests();
+    await runSupabaseConfigTests();
     await runConcurrencyTests();
 
     console.log("\n========================================================");
