@@ -111,7 +111,7 @@ npm run db:seed
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to view the storefront.
+Visit https://threadcore-beta.vercel.app/ to view the storefront.
 
 ---
 
