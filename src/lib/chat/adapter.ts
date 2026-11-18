@@ -5,6 +5,7 @@ import { privateMcpAuthentication } from "@/lib/mcp-auth/server";
 import { readBoundaryConfig } from "@/lib/mcp-auth/config";
 import { enforceChatRateLimit } from "./rate-limit";
 import { withMcpDeadline } from "./deadline";
+import { auditStage } from "./audit";
 
 export const TOOL_NAMES = ["catalog_read", "cart_read", "cart_write", "profile_read", "addresses_read", "addresses_write", "orders_read", "orders_write"] as const;
 export type ToolName = typeof TOOL_NAMES[number];
@@ -54,7 +55,9 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
   const authentication = privateMcpAuthentication();
   const config = readBoundaryConfig();
   // Establish the current browser context before any transport is opened.
+  auditStage("authentication");
   const initialDelegation = await authentication.delegateFromBrowser(request);
+  auditStage("rate_limit");
   await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
   signal.throwIfAborted();
   const client = new Client({ name: "threadcore-chat-backend", version: "1.0.0" });
@@ -78,6 +81,7 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
       if (bypassSecret) secured.headers.set("x-vercel-protection-bypass", bypassSecret);
       const protocol = outbound.headers.get("mcp-protocol-version");
       if (protocol) secured.headers.set("mcp-protocol-version", protocol);
+      auditStage("transport");
       return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
     },
   });
