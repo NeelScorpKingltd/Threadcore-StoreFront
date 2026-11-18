@@ -49,7 +49,9 @@ function projectCartReadForModel(result: DataRecord) {
 
 // Fresh client and delegation for each browser request. Never share across accounts.
 export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>): Promise<T> {
-  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)));
+  // One browser action includes SDK initialize, initialized notification and RPC,
+  // each with live authentication. Its aggregate budget exceeds one MCP request.
+  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)), 45_000);
 }
 
 async function runChatTools<T>(request: Request, work: (client: Client) => Promise<T>, signal: AbortSignal): Promise<T> {

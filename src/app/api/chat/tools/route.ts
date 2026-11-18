@@ -6,6 +6,7 @@ import { enforceChatRateLimit } from "@/lib/chat/rate-limit";
 import { ChatHttpError, chatHttpErrorResponse, limitedJsonResponse, readLimitedJson } from "@/lib/chat/http-limits";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 const schema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("list") }).strict(),
   z.object({ operation: z.literal("call"), tool: z.enum(TOOL_NAMES), arguments: z.record(z.string(), z.unknown()) }).strict(),
