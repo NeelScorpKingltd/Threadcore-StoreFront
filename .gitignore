@@ -43,6 +43,7 @@ next-env.d.ts
 
 # local product documentation & planning (private)
 PRODUCT_DOCUMENTATION.md
+API_DOCUMENTATION.md
 PRD.md
 AGENTS.md
 docs/

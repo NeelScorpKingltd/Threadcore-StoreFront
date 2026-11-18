@@ -5,7 +5,7 @@ import { updateProfileName } from "@/app/actions/user.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Check, User, Edit2 } from "lucide-react";
+import { Loader2, Edit2 } from "lucide-react";
 
 interface ProfileNameEditorProps {
   initialName: string;
@@ -14,7 +14,6 @@ interface ProfileNameEditorProps {
 
 export function ProfileNameEditor({
   initialName,
-  email,
 }: ProfileNameEditorProps) {
   const [isEditing, setIsEditing] = useState(!initialName);
   const [name, setName] = useState(initialName || "");

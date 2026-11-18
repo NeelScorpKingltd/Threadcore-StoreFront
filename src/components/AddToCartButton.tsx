@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useState, useTransition } from "react";
 import { addToCart } from "@/app/actions/cart.actions";
 import { Loader2, Check, ShoppingBag } from "lucide-react";
@@ -13,6 +15,7 @@ export function AddToCartButton({
   productId,
   inventoryCount,
 }: AddToCartButtonProps) {
+  const mutation = useMutationRequest();
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -25,8 +28,9 @@ export function AddToCartButton({
     setIsError(false);
 
     startTransition(async () => {
-      const res = await addToCart(productId, 1);
+      const res = await addToCart(productId, 1, mutation.requestId("add", [productId, 1]));
       if (res.success) {
+        mutation.complete("add");
         setStatusMessage("Added to bag");
         setTimeout(() => setStatusMessage(null), 3000);
       } else {

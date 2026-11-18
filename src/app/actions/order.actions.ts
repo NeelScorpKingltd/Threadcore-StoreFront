@@ -1,5 +1,7 @@
 "use server";
 
+import { publicError } from "@/lib/domain/errors";
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import * as OrderService from "@/services/order.service";
@@ -17,19 +19,20 @@ export async function createOrder(shippingAddress: {
   state: string;
   postalCode: string;
   country: string;
-}) {
+}, requestId: string) {
   const userId = await getAuthUserId();
   try {
     const result = await OrderService.createOrderFromCart({
       userId,
       shippingAddress,
+      requestId,
     });
     revalidatePath("/", "layout");
     revalidatePath("/cart");
     revalidatePath("/orders");
     return { success: true, ...result };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to place order";
+    const message = publicError(error);
     return { success: false, message };
   }
 }
@@ -44,16 +47,16 @@ export async function getOrderDetails(orderId: string) {
   return OrderService.getOrderDetails(userId, orderId);
 }
 
-export async function cancelOrder(orderId: string, reason: string) {
+export async function cancelOrder(orderId: string, reason: string, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    const result = await OrderService.cancelOrder({ userId, orderId, reason });
+    const result = await OrderService.cancelOrder({ userId, orderId, reason, requestId });
     revalidatePath("/orders");
     revalidatePath(`/orders/${orderId}`);
     revalidatePath("/", "layout");
     return { ...result };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to cancel order";
+    const message = publicError(error);
     return { success: false, message };
   }
 }

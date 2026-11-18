@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useState, useTransition } from "react";
 import { cancelOrder } from "@/app/actions/order.actions";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,7 @@ export function CancelOrderButton({
   orderId,
   orderNumber,
 }: CancelOrderButtonProps) {
+  const mutation = useMutationRequest();
   const [isOpen, setIsOpen] = useState(false);
   const [reason, setReason] = useState("Changed mind / ordered by mistake");
   const [isPending, startTransition] = useTransition();
@@ -23,8 +26,9 @@ export function CancelOrderButton({
   const handleCancel = () => {
     setError(null);
     startTransition(async () => {
-      const res = await cancelOrder(orderId, reason);
+      const res = await cancelOrder(orderId, reason, mutation.requestId("cancel", [orderId, reason]));
       if (res.success) {
+        mutation.complete("cancel");
         setSuccess(true);
         setIsOpen(false);
       } else {

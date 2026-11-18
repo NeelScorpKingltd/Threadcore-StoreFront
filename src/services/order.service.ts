@@ -1,17 +1,15 @@
+import { DomainError } from "@/lib/domain/errors";
 import { db } from "@/lib/db/client";
 import { orders, orderItems, cartItems, products } from "@/lib/db/schema";
 import { eq, and, desc, asc, gte, inArray, sql } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { once } from "@/lib/domain/mutation";
+import { customerId, uuid, address, text, quantity, pagination, MAX_CART_ITEMS, type PageInput } from "@/lib/domain/validation";
 
-function generateOrderNumber(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let result = "ORD-";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
+function generateOrderNumber(): string { return "ORD-" + randomBytes(12).toString("hex").toUpperCase(); }
 
 export async function createOrderFromCart(params: {
+  requestId: string;
   userId: string;
   shippingAddress: {
     street: string;
@@ -21,9 +19,10 @@ export async function createOrderFromCart(params: {
     country: string;
   };
 }) {
-  const { userId, shippingAddress } = params;
-
-  return await db.transaction(async (tx) => {
+  const userId = customerId(params.userId);
+  const { isDefault: _unused, ...shippingAddress } = address(params.shippingAddress);
+  void _unused;
+  return once(userId, "checkout.create", params.requestId, Object.values(shippingAddress), async (tx) => {
     // 1. Fetch user's cart items
     const userCartItems = await tx
       .select({
@@ -32,15 +31,17 @@ export async function createOrderFromCart(params: {
         quantity: cartItems.quantity,
       })
       .from(cartItems)
-      .where(eq(cartItems.userId, userId));
+      .where(eq(cartItems.userId, userId)).limit(MAX_CART_ITEMS + 1);
 
+    if (userCartItems.length > MAX_CART_ITEMS) throw new DomainError("Cart exceeds supported item limit");
     if (userCartItems.length === 0) {
-      throw new Error("Cart is empty");
+      throw new DomainError("Cart is empty");
     }
 
     // Consolidate quantities per product ID
     const qtyByProduct = new Map<string, number>();
     for (const item of userCartItems) {
+      quantity(item.quantity);
       qtyByProduct.set(
         item.productId,
         (qtyByProduct.get(item.productId) ?? 0) + item.quantity
@@ -73,11 +74,11 @@ export async function createOrderFromCart(params: {
       const product = productMap.get(productId);
 
       if (!product) {
-        throw new Error("Product not found");
+        throw new DomainError("Product not found");
       }
 
       if (product.inventoryCount < requiredQty) {
-        throw new Error(
+        throw new DomainError(
           `Insufficient stock for ${product.title}: only ${product.inventoryCount} available`
         );
       }
@@ -97,12 +98,14 @@ export async function createOrderFromCart(params: {
         .returning({ id: products.id, inventoryCount: products.inventoryCount });
 
       if (!updatedProduct) {
-        throw new Error(
+        throw new DomainError(
           `Insufficient stock for ${product.title}: unable to reserve inventory`
         );
       }
 
+      if (!Number.isInteger(product.priceCents) || product.priceCents < 0) throw new DomainError("Invalid product price");
       totalAmountCents += product.priceCents * requiredQty;
+      if (!Number.isSafeInteger(totalAmountCents) || totalAmountCents > 2147483647) throw new DomainError("Order total exceeds supported amount");
       orderItemsToInsert.push({
         productId,
         quantity: requiredQty,
@@ -144,39 +147,25 @@ export async function createOrderFromCart(params: {
   });
 }
 
-export async function getUserOrders(userId: string) {
-  const userOrders = await db
-    .select({
-      id: orders.id,
-      orderNumber: orders.orderNumber,
-      totalAmountCents: orders.totalAmountCents,
-      status: orders.status,
-      createdAt: orders.createdAt,
-      updatedAt: orders.updatedAt,
-    })
-    .from(orders)
-    .where(eq(orders.userId, userId))
-    .orderBy(desc(orders.createdAt));
-
-  // Get item counts for each order
-  const ordersWithCounts = await Promise.all(
-    userOrders.map(async (order) => {
-      const items = await db
-        .select({ quantity: orderItems.quantity })
-        .from(orderItems)
-        .where(eq(orderItems.orderId, order.id));
-
-      const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-      return { ...order, itemCount };
-    })
-  );
-
-  return ordersWithCounts;
+export async function getUserOrders(userId: string, page: PageInput = {}) {
+  userId = customerId(userId);
+  const { limit, offset } = pagination(page);
+  return db.select({
+    id: orders.id, orderNumber: orders.orderNumber, totalAmountCents: orders.totalAmountCents,
+    status: orders.status, createdAt: orders.createdAt, updatedAt: orders.updatedAt,
+    itemCount: sql<number>`(select coalesce(sum(${orderItems.quantity}), 0)::int from ${orderItems} where ${orderItems.orderId} = ${orders.id})`,
+  }).from(orders).where(eq(orders.userId, userId))
+    .orderBy(desc(orders.createdAt), desc(orders.id)).limit(limit).offset(offset);
 }
 
 export async function getOrderDetails(userId: string, orderId: string) {
+  userId = customerId(userId);
+  orderId = uuid(orderId, "order ID");
   const [order] = await db
-    .select()
+    .select({ id: orders.id, orderNumber: orders.orderNumber,
+      shippingAddress: orders.shippingAddress, totalAmountCents: orders.totalAmountCents,
+      status: orders.status, cancellationReason: orders.cancellationReason,
+      createdAt: orders.createdAt, updatedAt: orders.updatedAt })
     .from(orders)
     .where(and(eq(orders.id, orderId), eq(orders.userId, userId)))
     .limit(1);
@@ -197,7 +186,11 @@ export async function getOrderDetails(userId: string, orderId: string) {
     })
     .from(orderItems)
     .innerJoin(products, eq(orderItems.productId, products.id))
-    .where(eq(orderItems.orderId, orderId));
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .where(and(eq(orderItems.orderId, orderId), eq(orders.userId, userId)))
+    .orderBy(asc(orderItems.id)).limit(MAX_CART_ITEMS + 1);
+
+  if (items.length > MAX_CART_ITEMS) throw new DomainError("Order exceeds supported item limit");
 
   return { ...order, items };
 }
@@ -206,10 +199,12 @@ export async function cancelOrder(params: {
   userId: string;
   orderId: string;
   reason: string;
+  requestId: string;
 }) {
-  const { userId, orderId, reason } = params;
-
-  return await db.transaction(async (tx) => {
+  const userId = customerId(params.userId);
+  const orderId = uuid(params.orderId, "order ID");
+  const reason = text(params.reason, "cancellation reason", 500);
+  return once(userId, "order.cancel", params.requestId, [orderId, reason], async (tx) => {
     // 1. Atomically transition order status from a cancellable state (CONFIRMED or PROCESSING) to CANCELLED.
     // This atomic conditional update succeeds if and only if the order is currently
     // in CONFIRMED or PROCESSING, preventing concurrent cancellation requests from restoring inventory more than once.
@@ -240,9 +235,9 @@ export async function cancelOrder(params: {
         .limit(1);
 
       if (!existingOrder) {
-        throw new Error("Order not found");
+        throw new DomainError("Order not found");
       }
-      throw new Error(`Cannot cancel order with status: ${existingOrder.status}`);
+      throw new DomainError(`Cannot cancel order with status: ${existingOrder.status}`);
     }
 
     // 2. The order status transition succeeded; restore inventory
@@ -257,6 +252,7 @@ export async function cancelOrder(params: {
     // Consolidate quantities per product ID and sort product IDs deterministically
     const qtyByProduct = new Map<string, number>();
     for (const item of items) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) throw new DomainError("Invalid order item quantity");
       qtyByProduct.set(
         item.productId,
         (qtyByProduct.get(item.productId) ?? 0) + item.quantity

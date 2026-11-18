@@ -1,5 +1,7 @@
 # ThreadCore
 
+See [deployment instructions and code structure](DEPLOYMENT.md) for the private MCP integration, staging setup, migration order, environment variables and production gates.
+
 ThreadCore is a full-stack, high-concurrency editorial apparel storefront engineered with Next.js 16, React 19, Tailwind CSS v4, Supabase Authentication, and Drizzle ORM on PostgreSQL.
 
 ---
@@ -40,8 +42,11 @@ ThreadCore is a full-stack, high-concurrency editorial apparel storefront engine
 Threadcore/
 ├── public/                 # Static assets and icons
 ├── scripts/
-│   ├── test-concurrency-and-security.ts  # Concurrency & security test suite
-│   └── verify-invariants.ts              # Business rule verification suite
+│   ├── test-mcp-auth.ts       # Offline authentication/security checks
+│   ├── test-mcp-transport.ts  # Official SDK internal client harness
+│   ├── test-domain-isolated.ts # Disposable local PostgreSQL regression suite
+│   └── inspect-db-privileges.ts # Read-only database metadata inspection
+├── migrations/              # Reviewed SQL; apply to staging before deployment
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/         # Login and signup routes
@@ -54,6 +59,7 @@ Threadcore/
 │   ├── lib/
 │   │   ├── db/             # Drizzle client, schema, and seed scripts
 │   │   ├── supabase/       # Supabase server/client/proxy helpers
+│   │   ├── mcp-auth/       # Private server-only delegation/session boundary
 │   │   └── utils.ts        # Formatting & styling utilities
 │   ├── services/           # Domain services (catalog, cart, order, user)
 │   └── proxy.ts            # Root Next.js session refresh proxy
@@ -97,7 +103,13 @@ DATABASE_URL=postgresql://postgres.your-project:your-password@aws-0-region.poole
 DIRECT_URL=postgresql://postgres.your-project:your-password@aws-0-region.pooler.supabase.com:5432/postgres
 ```
 
-### 4. Database Seeding
+### 4. Database Preparation
+
+Apply the reviewed migrations to an isolated staging database before deploying
+the service changes. See [Phase 2](MCP_PHASE2.md) and [Phase 3](MCP_PHASE3.md) for
+privilege checks, migration ordering and required server-only configuration.
+These migrations are not run automatically. Do not seed or migrate production
+without separate authorization.
 
 Populate the demo apparel catalog:
 
@@ -111,23 +123,28 @@ npm run db:seed
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to view the storefront.
+Visit https://threadcore-beta.vercel.app/ to view the storefront.
 
 ---
 
 ## Testing & Verification
 
-- **Security & Concurrency Test Suite**:
+- **Safe regression suites**:
   ```bash
-  npx tsx --env-file=.env.local scripts/test-concurrency-and-security.ts
+  npm test
   ```
-  Runs 29 automated checks verifying safe auth redirects, concurrent checkout race prevention, and atomic cancellation stock integrity.
+  Runs authentication checks offline and domain/concurrency checks in a disposable
+  loopback-only PostgreSQL cluster. Tests do not load `.env.local` or connect to Supabase.
+  The local PostgreSQL development dependency requires its platform installation scripts.
 
-- **Invariant Verification Suite**:
+- **Run one suite**:
   ```bash
-  npx tsx --env-file=.env.local scripts/verify-invariants.ts
+  npm run test:auth
+  npm run test:mcp
+  npm run test:domain
   ```
-  Validates catalog seeding, sold-out product restrictions, and order lifecycle invariants.
+  The superseded database-mutating demo suites were removed after their useful
+  checks were retained in these isolated suites.
 
 - **Production Build**:
   ```bash

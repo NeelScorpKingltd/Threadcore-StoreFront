@@ -1,5 +1,7 @@
 "use server";
 
+import { publicError } from "@/lib/domain/errors";
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import * as UserService from "@/services/user.service";
@@ -25,8 +27,7 @@ export async function updateProfileName(fullName: string) {
     revalidatePath("/", "layout");
     return { success: true };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to update profile name";
+    const message = publicError(error);
     return { success: false, message };
   }
 }
@@ -43,28 +44,28 @@ export async function addAddress(data: {
   postalCode: string;
   country?: string;
   isDefault?: boolean;
-}) {
+}, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    const address = await UserService.addAddress(userId, data);
+    const address = await UserService.addAddress(userId, data, requestId);
     revalidatePath("/profile");
     revalidatePath("/checkout");
     return { success: true, address };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to add address";
+    const message = publicError(error);
     return { success: false, message };
   }
 }
 
-export async function deleteAddress(addressId: string) {
+export async function deleteAddress(addressId: string, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    await UserService.deleteAddress(userId, addressId);
+    await UserService.deleteAddress(userId, addressId, requestId);
     revalidatePath("/profile");
     revalidatePath("/checkout");
     return { success: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete address";
+    const message = publicError(error);
     return { success: false, message };
   }
 }

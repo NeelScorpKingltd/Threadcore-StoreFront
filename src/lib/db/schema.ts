@@ -8,7 +8,11 @@ import {
   jsonb,
   pgEnum,
   uniqueIndex,
+  primaryKey,
+  check,
+  index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ── Enums ──────────────────────────────────────────────────────────────
 export const orderStatusEnum = pgEnum("order_status", [
@@ -20,6 +24,24 @@ export const orderStatusEnum = pgEnum("order_status", [
 ]);
 
 // ── Products ───────────────────────────────────────────────────────────
+export const pendingActions = pgTable("pending_actions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  action: jsonb("action").notNull(),
+  preview: jsonb("preview").notNull(),
+  status: text("status").notNull().default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().default(sql`now() + interval '5 minutes'`),
+}, (table) => [check("pending_action_status", sql`${table.status} in ('pending','approved','rejected','executed','expired')`)]).enableRLS();
+
+export const mutationReceipts = pgTable("mutation_receipts", {
+  userId: text("user_id").notNull(),
+  operation: text("operation").notNull(),
+  requestId: uuid("request_id").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  result: jsonb("result").notNull().$type<unknown>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.operation, table.requestId] })]).enableRLS();
+
 export const products = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
   sku: text("sku").notNull().unique(),
@@ -32,7 +54,7 @@ export const products = pgTable("products", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [check("product_nonnegative", sql`${table.inventoryCount} >= 0 AND ${table.priceCents} >= 0`)]);
 
 // ── Addresses ──────────────────────────────────────────────────────────
 export const addresses = pgTable("addresses", {
@@ -47,7 +69,7 @@ export const addresses = pgTable("addresses", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [uniqueIndex("unique_default_address").on(table.userId).where(sql`${table.isDefault}`)]);
 
 // ── Orders ─────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
@@ -72,7 +94,10 @@ export const orders = pgTable("orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [
+  check("order_total_nonnegative", sql`${table.totalAmountCents} >= 0`),
+  index("orders_customer_page").on(table.userId, table.createdAt.desc(), table.id.desc()),
+]);
 
 // ── Order Items ────────────────────────────────────────────────────────
 export const orderItems = pgTable("order_items", {
@@ -85,7 +110,10 @@ export const orderItems = pgTable("order_items", {
     .references(() => products.id),
   quantity: integer("quantity").notNull(),
   unitPriceCents: integer("unit_price_cents").notNull(),
-});
+}, (table) => [
+  check("order_item_positive", sql`${table.quantity} > 0 AND ${table.unitPriceCents} >= 0`),
+  index("order_items_order_lookup").on(table.orderId),
+]);
 
 // ── Cart Items ─────────────────────────────────────────────────────────
 export const cartItems = pgTable(
@@ -106,5 +134,6 @@ export const cartItems = pgTable(
       table.userId,
       table.productId
     ),
+    quantityBounds: check("cart_quantity_bounds", sql`${table.quantity} BETWEEN 1 AND 99`),
   })
 );
