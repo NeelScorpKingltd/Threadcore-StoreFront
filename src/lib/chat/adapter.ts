@@ -6,6 +6,42 @@ import { readBoundaryConfig } from "@/lib/mcp-auth/config";
 
 export const TOOL_NAMES = ["catalog_read", "cart_read", "cart_write", "profile_read", "addresses_read", "addresses_write", "orders_read", "orders_write"] as const;
 export type ToolName = typeof TOOL_NAMES[number];
+type DataRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is DataRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function projectCartReadForModel(result: DataRecord) {
+  if (result.isError === true) return { status: "failed" };
+  const envelope = isRecord(result.structuredContent) ? result.structuredContent : null;
+  const data = envelope && isRecord(envelope.data) ? envelope.data : null;
+  if (!data) return { status: "unavailable" };
+
+  const items = Array.isArray(data.items) ? data.items.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    const product = isRecord(value.product) ? value.product : {};
+    return [{
+      ...(typeof value.id === "string" ? { cartItemId: value.id } : {}),
+      ...(typeof value.productId === "string" ? { productId: value.productId } : {}),
+      ...(typeof value.quantity === "number" ? { quantity: value.quantity } : {}),
+      product: {
+        ...(typeof product.title === "string" ? { title: product.title } : {}),
+        ...(typeof product.sku === "string" ? { sku: product.sku } : {}),
+        ...(typeof product.priceCents === "number" ? { priceCents: product.priceCents } : {}),
+      },
+    }];
+  }) : [];
+
+  return {
+    status: "ok",
+    cart: {
+      items,
+      ...(typeof data.subtotalCents === "number" ? { subtotalCents: data.subtotalCents } : {}),
+      ...(typeof data.totalItems === "number" ? { totalItems: data.totalItems } : {}),
+    },
+  };
+}
 
 // Fresh client and delegation for each browser request. Never share across accounts.
 export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>): Promise<T> {
@@ -49,7 +85,8 @@ export function presentToolResult(tool: ToolName, result: Record<string, unknown
     uiResult: result,
     // The future model gets no address/order bodies by default. UI rendering is
     // separate from conversation storage; this adapter writes no logs/history.
-    modelResult: privateData ? { status: result.isError ? "failed" : "shown_in_private_ui" } : result,
+    modelResult: privateData ? { status: result.isError ? "failed" : "shown_in_private_ui" }
+      : tool === "cart_read" ? projectCartReadForModel(result) : result,
     persist: false,
     checkoutPath: "/checkout",
     loginPath: "/login",
