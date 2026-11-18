@@ -1,11 +1,12 @@
 import { DomainError } from "@/lib/domain/errors";
-import { db } from "@/lib/db/client";
+import { readTransaction } from "@/lib/domain/mutation";
 import { cartItems, products } from "@/lib/db/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { customerTransaction, once } from "@/lib/domain/mutation";
 import { customerId, uuid, quantity as validQuantity, MAX_CART_ITEMS } from "@/lib/domain/validation";
 
 export async function getCart(userId: string) {
+  return readTransaction(async (db) => {
   userId = customerId(userId);
   const items = await db.select({
     id: cartItems.id, userId: cartItems.userId, productId: cartItems.productId,
@@ -18,6 +19,7 @@ export async function getCart(userId: string) {
   for (const item of items) validQuantity(item.quantity);
   return { items, subtotalCents: items.reduce((sum, item) => sum + item.product.priceCents * item.quantity, 0),
     totalItems: items.reduce((sum, item) => sum + item.quantity, 0) };
+  });
 }
 
 export async function addToCart(userId: string, productId: string, quantity: number, requestId: string) {

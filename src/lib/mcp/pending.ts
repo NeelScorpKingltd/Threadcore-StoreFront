@@ -1,9 +1,8 @@
 import "server-only";
 import { sql } from "drizzle-orm";
-import { db } from "@/lib/db/client";
 import { address, customerId, text, uuid } from "@/lib/domain/validation";
 import { DomainError } from "@/lib/domain/errors";
-import { customerTransaction } from "@/lib/domain/mutation";
+import { customerTransaction, readTransaction } from "@/lib/domain/mutation";
 import * as addresses from "@/services/user.service";
 import * as orders from "@/services/order.service";
 
@@ -28,7 +27,7 @@ export async function propose(user: string, input: Action) {
     if (!["CONFIRMED","PROCESSING"].includes(order.status)) throw new DomainError("Order cannot be cancelled");
     preview = { operation: "cancel", orderNumber: order.orderNumber, totalAmountCents: order.totalAmountCents, reason: action.reason };
   }
-  await db.execute(sql`insert into public.pending_actions(user_id, action, preview) values (${user}::uuid, ${JSON.stringify(action)}::jsonb, ${JSON.stringify(preview)}::jsonb)`);
+  await readTransaction((tx) => tx.execute(sql`insert into public.pending_actions(user_id, action, preview) values (${user}::uuid, ${JSON.stringify(action)}::jsonb, ${JSON.stringify(preview)}::jsonb)`));
   return { status: "AWAITING_CONFIRMATION", executed: false };
 }
 

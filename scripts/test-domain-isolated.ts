@@ -64,6 +64,16 @@ async function main() {
     process.env.DATABASE_URL = url;
     const { db } = await import("../src/lib/db/client");
     closeApp = () => db.$client.end();
+    const { customerTransaction, readTransaction } = await import("../src/lib/domain/mutation");
+    await check("runtime transactions set local budgets and nested reads reuse their transaction", async () => {
+      await customerTransaction(randomUUID(), async (tx) => {
+        const [statement] = await tx.execute<{ statement_timeout: string }>(sql`SHOW statement_timeout`);
+        assert.equal(statement.statement_timeout, "10s");
+        const [lock] = await tx.execute<{ lock_timeout: string }>(sql`SHOW lock_timeout`);
+        assert.equal(lock.lock_timeout, "3s");
+        await readTransaction(async (nested) => { assert.equal(nested, tx); });
+      });
+    });
     const { enforceChatRateLimit } = await import("../src/lib/chat/rate-limit");
     await check("distributed rate limit serializes concurrent requests and resets expired window", async () => {
       const results = await Promise.allSettled(Array.from({ length: 12 }, () => enforceChatRateLimit("test:concurrent", 5)));

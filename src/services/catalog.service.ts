@@ -1,5 +1,5 @@
 import { DomainError } from "@/lib/domain/errors";
-import { db } from "@/lib/db/client";
+import { readTransaction } from "@/lib/domain/mutation";
 import { products } from "@/lib/db/schema";
 import { eq, ilike, desc, gt, and, type SQL } from "drizzle-orm";
 import { pagination, text, uuid, type PageInput } from "@/lib/domain/validation";
@@ -13,6 +13,7 @@ export async function listProducts(params?: {
   search?: string;
   inStockOnly?: boolean;
 } & PageInput) {
+  return readTransaction(async (db) => {
   const { limit, offset } = pagination(params);
   if (params?.inStockOnly !== undefined && typeof params.inStockOnly !== "boolean") throw new DomainError("Invalid stock filter");
   const conditions: SQL[] = [];
@@ -35,9 +36,11 @@ export async function listProducts(params?: {
     .from(products)
     .where(where)
     .orderBy(desc(products.createdAt), desc(products.id)).limit(limit).offset(offset);
+  });
 }
 
 export async function getProductById(id: string) {
+  return readTransaction(async (db) => {
   id = uuid(id, "product ID");
   const [product] = await db
     .select(fields)
@@ -45,9 +48,11 @@ export async function getProductById(id: string) {
     .where(eq(products.id, id))
     .limit(1);
   return product ?? null;
+  });
 }
 
 export async function getProductBySku(sku: string) {
+  return readTransaction(async (db) => {
   sku = text(sku, "SKU", 100);
   const [product] = await db
     .select(fields)
@@ -55,4 +60,5 @@ export async function getProductBySku(sku: string) {
     .where(eq(products.sku, sku))
     .limit(1);
   return product ?? null;
+  });
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
-type Stage = "received" | "rate_limit" | "authentication" | "transport" | "input" | "tool" | "confirmation";
+type Stage = "received" | "rate_limit" | "authentication" | "configuration" | "supabase_user" | "session_database" | "transport" | "input" | "tool" | "confirmation";
 type Context = { stage: Stage; requestId: string };
 const context = new AsyncLocalStorage<Context>();
 
@@ -10,7 +10,7 @@ export function auditStage(stage: Stage) { const current = context.getStore(); i
 
 // Only fixed categories and server-generated IDs enter logs. Never accept arbitrary
 // request headers, bodies, error messages/stacks, identities or tool results here.
-export async function auditRequest(route: "tools" | "confirm", work: () => Promise<Response>): Promise<Response> {
+export async function auditRequest(route: "tools" | "confirm" | "mcp", work: () => Promise<Response>): Promise<Response> {
   const requestId = randomUUID();
   const started = Date.now();
   const state: Context = { stage: "received", requestId };
@@ -23,8 +23,11 @@ export async function auditRequest(route: "tools" | "confirm", work: () => Promi
       return response;
     } finally {
       try {
-        console.info(JSON.stringify({ event: "chat_request", route, requestId,
-          stage: state.stage, httpStatus: status, durationMs: Date.now() - started }));
+        const entry = JSON.stringify({ event: "chat_request", route, requestId,
+          stage: state.stage, httpStatus: status, durationMs: Date.now() - started });
+        if (status >= 500) console.error(entry);
+        else if (status >= 400) console.warn(entry);
+        else console.info(entry);
       } catch { /* Observability failures must not change a committed operation. */ }
     }
   });

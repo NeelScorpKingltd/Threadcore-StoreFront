@@ -9,6 +9,16 @@ import { customerId, uuid } from "./validation";
 export type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const activeTransaction = new AsyncLocalStorage<{ userId: string; tx: Transaction }>();
 
+export async function readTransaction<T>(work: (tx: Transaction) => Promise<T>) {
+  const current = activeTransaction.getStore();
+  if (current) return work(current.tx);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+    await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
+    return work(tx);
+  });
+}
+
 // Transaction locks work with transaction pooling. All customer writes acquire
 // this before product/order locks; hash collisions only serialize unrelated users.
 export async function lockCustomer(tx: Transaction, userId: string) {
@@ -23,6 +33,9 @@ export async function customerTransaction<T>(userId: string, work: (tx: Transact
     return work(current.tx);
   }
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+    await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
+    await tx.execute(sql`SET LOCAL idle_in_transaction_session_timeout = '15s'`);
     await lockCustomer(tx, userId);
     return activeTransaction.run({ userId, tx }, () => work(tx));
   });

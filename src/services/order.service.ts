@@ -1,5 +1,5 @@
 import { DomainError } from "@/lib/domain/errors";
-import { db } from "@/lib/db/client";
+import { readTransaction } from "@/lib/domain/mutation";
 import { orders, orderItems, cartItems, products } from "@/lib/db/schema";
 import { eq, and, desc, asc, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
@@ -148,6 +148,7 @@ export async function createOrderFromCart(params: {
 }
 
 export async function getUserOrders(userId: string, page: PageInput = {}) {
+  return readTransaction(async (db) => {
   userId = customerId(userId);
   const { limit, offset } = pagination(page);
   return db.select({
@@ -156,9 +157,11 @@ export async function getUserOrders(userId: string, page: PageInput = {}) {
     itemCount: sql<number>`(select coalesce(sum(${orderItems.quantity}), 0)::int from ${orderItems} where ${orderItems.orderId} = ${orders.id})`,
   }).from(orders).where(eq(orders.userId, userId))
     .orderBy(desc(orders.createdAt), desc(orders.id)).limit(limit).offset(offset);
+  });
 }
 
 export async function getOrderDetails(userId: string, orderId: string) {
+  return readTransaction(async (db) => {
   userId = customerId(userId);
   orderId = uuid(orderId, "order ID");
   const [order] = await db
@@ -193,6 +196,7 @@ export async function getOrderDetails(userId: string, orderId: string) {
   if (items.length > MAX_CART_ITEMS) throw new DomainError("Order exceeds supported item limit");
 
   return { ...order, items };
+  });
 }
 
 export async function cancelOrder(params: {

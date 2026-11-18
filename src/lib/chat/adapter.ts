@@ -6,6 +6,7 @@ import { readBoundaryConfig } from "@/lib/mcp-auth/config";
 import { enforceChatRateLimit } from "./rate-limit";
 import { withMcpDeadline } from "./deadline";
 import { auditStage } from "./audit";
+import { withChatCapacity } from "./concurrency";
 
 export const TOOL_NAMES = ["catalog_read", "cart_read", "cart_write", "profile_read", "addresses_read", "addresses_write", "orders_read", "orders_write"] as const;
 export type ToolName = typeof TOOL_NAMES[number];
@@ -48,7 +49,7 @@ function projectCartReadForModel(result: DataRecord) {
 
 // Fresh client and delegation for each browser request. Never share across accounts.
 export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>): Promise<T> {
-  return withMcpDeadline((signal) => runChatTools(request, work, signal));
+  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)));
 }
 
 async function runChatTools<T>(request: Request, work: (client: Client) => Promise<T>, signal: AbortSignal): Promise<T> {

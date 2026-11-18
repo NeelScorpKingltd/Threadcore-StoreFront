@@ -1,6 +1,7 @@
 import "server-only";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { authenticationErrorResponse } from "@/lib/mcp-auth/http";
+import { ChatHttpError, chatHttpErrorResponse } from "@/lib/chat/http-limits";
 import type { Authorize, Services } from "./server";
 import { createMcpServer } from "./server";
 
@@ -22,5 +23,5 @@ export async function handleMcp(request: Request, authorize: Authorize, services
       headers.set("cache-control", "no-store, private"); headers.set("vary", "Cookie, Authorization");
       return new Response(body.byteLength ? body : null, { status: response.status, headers });
     } finally { await server.close(); }
-  } catch (error) { return authenticationErrorResponse(error); }
+  } catch (error) { return error instanceof ChatHttpError ? chatHttpErrorResponse(error) : authenticationErrorResponse(error); }
 }

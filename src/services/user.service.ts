@@ -1,5 +1,5 @@
 import { DomainError } from "@/lib/domain/errors";
-import { db } from "@/lib/db/client";
+import { readTransaction } from "@/lib/domain/mutation";
 import { addresses } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { once } from "@/lib/domain/mutation";
@@ -10,11 +10,13 @@ const fields = { id: addresses.id, street: addresses.street, city: addresses.cit
   isDefault: addresses.isDefault };
 
 export async function getAddresses(userId: string) {
+  return readTransaction(async (db) => {
   userId = customerId(userId);
   const result = await db.select(fields).from(addresses).where(eq(addresses.userId, userId))
     .orderBy(desc(addresses.isDefault), desc(addresses.createdAt), desc(addresses.id)).limit(MAX_ADDRESSES + 1);
   if (result.length > MAX_ADDRESSES) throw new DomainError("Address book exceeds supported limit");
   return result;
+  });
 }
 
 export async function addAddress(userId: string, data: AddressInput, requestId: string) {

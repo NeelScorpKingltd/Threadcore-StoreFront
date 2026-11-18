@@ -6,10 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/config";
 import { readBoundaryConfig } from "./config";
 import { createAuthenticationBoundary } from "./core";
+import { auditStage } from "@/lib/chat/audit";
 
 // No 'use server' directive: these functions must never become public Server Actions.
 // Called by the future same-origin chat backend and private MCP route only.
 export function privateMcpAuthentication() {
+  auditStage("configuration");
   const config = readBoundaryConfig();
   return createAuthenticationBoundary(config, {
     async readAccessToken() {
@@ -20,6 +22,7 @@ export function privateMcpAuthentication() {
       return data.session?.access_token ?? null;
     },
     async verifyUser(token) {
+      auditStage("supabase_user");
       // No mutable shared client/session and no service-role key.
       const supabase = createAuthClient(getSupabaseUrl(), getSupabaseAnonKey(), {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -32,10 +35,14 @@ export function privateMcpAuthentication() {
       return data.user ? { id: data.user.id, isAnonymous: data.user.is_anonymous === true } : null;
     },
     async sessionIsActive(userId, sessionId) {
-      const [row] = await db.execute<{ active: boolean }>(sql`
+      auditStage("session_database");
+      return db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+      const [row] = await tx.execute<{ active: boolean }>(sql`
         select public.threadcore_session_is_active(${userId}::uuid, ${sessionId}::uuid) as active
       `);
       return row?.active === true;
+      });
     },
   });
 }
