@@ -68,6 +68,7 @@ export async function Navbar() {
 
         {/* Right Actions: Profile on left, Cart Button on the far right */}
         <div className="flex items-center space-x-4 sm:space-x-5">
+          <Link href="/chat" className="text-xs font-medium text-stone-700 hover:underline">Chat</Link>
           {/* User / Profile Section */}
           {user ? (
             <div className="flex items-center space-x-3">

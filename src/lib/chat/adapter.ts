@@ -48,10 +48,10 @@ function projectCartReadForModel(result: DataRecord) {
 }
 
 // Fresh client and delegation for each browser request. Never share across accounts.
-export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>): Promise<T> {
+export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>, milliseconds = 45_000): Promise<T> {
   // One browser action includes SDK initialize, initialized notification and RPC,
   // each with live authentication. Its aggregate budget exceeds one MCP request.
-  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)), 45_000);
+  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)), milliseconds);
 }
 
 async function runChatTools<T>(request: Request, work: (client: Client) => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -95,7 +95,7 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
 export function presentToolResult(tool: ToolName, result: Record<string, unknown>) {
   const serialized = JSON.stringify(result);
   const loginRequired = serialized.includes('"LOGIN_REQUIRED"') || serialized.includes('"INVALID_CREDENTIAL"');
-  const privateData = tool.startsWith("addresses_") || tool.startsWith("orders_");
+  const privateData = tool === "profile_read" || tool.startsWith("addresses_") || tool.startsWith("orders_");
   return {
     kind: loginRequired ? "login_required" : result.isError ? "error" : "tool_result",
     tool,

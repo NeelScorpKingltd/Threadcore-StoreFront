@@ -10,7 +10,7 @@ export function auditStage(stage: Stage) { const current = context.getStore(); i
 
 // Only fixed categories and server-generated IDs enter logs. Never accept arbitrary
 // request headers, bodies, error messages/stacks, identities or tool results here.
-export async function auditRequest(route: "tools" | "confirm" | "mcp", work: () => Promise<Response>): Promise<Response> {
+export async function auditRequest(route: "tools" | "confirm" | "mcp" | "message", work: () => Promise<Response>): Promise<Response> {
   const requestId = randomUUID();
   const started = Date.now();
   const state: Context = { stage: "received", requestId };
@@ -42,4 +42,9 @@ export function auditConfirmation(confirm: boolean, status: unknown) {
   const outcome = typeof status === "string" && ["executed", "rejected", "expired"].includes(status) ? status : "unknown";
   try { console.info(JSON.stringify({ event: "chat_confirmation", requestId: context.getStore()?.requestId,
     decision: confirm ? "confirm" : "reject", outcome })); } catch { /* Logging cannot alter transaction outcomes. */ }
+}
+
+export function auditAgentOutcome(outcome: "completed" | "unavailable" | "aborted") {
+  try { console.info(JSON.stringify({ event: "chat_agent", requestId: context.getStore()?.requestId, outcome })); }
+  catch { /* No payloads or provider errors enter audit logs. */ }
 }

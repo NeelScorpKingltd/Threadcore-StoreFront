@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith(path)
   );
 
-  if (!user && !isPublicPath && request.nextUrl.pathname !== "/") {
+  if (!user && !isPublicPath && !["/", "/chat"].includes(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
