@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { privateMcpAuthentication } from "@/lib/mcp-auth/server";
 import { readBoundaryConfig } from "@/lib/mcp-auth/config";
 import { enforceChatRateLimit } from "./rate-limit";
+import { withMcpDeadline } from "./deadline";
 
 export const TOOL_NAMES = ["catalog_read", "cart_read", "cart_write", "profile_read", "addresses_read", "addresses_write", "orders_read", "orders_write"] as const;
 export type ToolName = typeof TOOL_NAMES[number];
@@ -46,18 +47,25 @@ function projectCartReadForModel(result: DataRecord) {
 
 // Fresh client and delegation for each browser request. Never share across accounts.
 export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>): Promise<T> {
+  return withMcpDeadline((signal) => runChatTools(request, work, signal));
+}
+
+async function runChatTools<T>(request: Request, work: (client: Client) => Promise<T>, signal: AbortSignal): Promise<T> {
   const authentication = privateMcpAuthentication();
   const config = readBoundaryConfig();
   // Establish the current browser context before any transport is opened.
   const initialDelegation = await authentication.delegateFromBrowser(request);
   await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
+  signal.throwIfAborted();
   const client = new Client({ name: "threadcore-chat-backend", version: "1.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(`${config.origin}/api/mcp`), {
     fetch: async (input, init) => {
+      signal.throwIfAborted();
       const outbound = new Request(input, init);
       if (outbound.url !== `${config.origin}/api/mcp`) throw new Error("Unexpected transport target");
       if (outbound.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
       const delegation = await authentication.delegateFromBrowser(request);
+      signal.throwIfAborted();
       // SDK initialization and every call get fresh hidden credentials. Never forward
       // browser headers wholesale, allow redirects, or place credentials in tool args.
       const secured = delegation.transportRequest(await outbound.text());
@@ -70,10 +78,10 @@ export async function withChatTools<T>(request: Request, work: (client: Client) 
       if (bypassSecret) secured.headers.set("x-vercel-protection-bypass", bypassSecret);
       const protocol = outbound.headers.get("mcp-protocol-version");
       if (protocol) secured.headers.set("mcp-protocol-version", protocol);
-      return fetch(secured);
+      return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
     },
   });
-  try { await client.connect(transport); return await work(client); }
+  try { await client.connect(transport); signal.throwIfAborted(); return await work(client); }
   finally { await client.close(); }
 }
 

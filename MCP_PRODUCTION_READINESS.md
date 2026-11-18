@@ -84,3 +84,7 @@ Shared PostgreSQL atomic counters now enforce 60 tool requests/customer/minute a
 Before deploying: apply migrations/phase7-rate-limits.sql in isolated staging. The reviewed server role needs SELECT/INSERT/UPDATE; non-owner roles also need a narrowly scoped server-only RLS policy. Browser roles are explicitly revoked. Do not push/deploy this code before the table exists. No production migration has been performed.
 
 Staging update: user reports phase7-rate-limits.sql applied successfully. Rate-limit code is ready for Preview deployment and live validation; production migration remains unapplied.
+
+## Increment 4 — MCP adapter deadline
+The adapter has a shared 20-second deadline across its authentication, connection and tool callback. Expiry returns HTTP 504 MCP_TIMEOUT and aborts active MCP fetches. Checks before transport work prevent delayed authentication from starting a new fetch after expiry. Browser cancellation is propagated to the internal fetch. This is not database statement cancellation: work already executing remotely may commit after timeout. Retry cart writes with the same requestId; query/retry confirmations with the same pending action ID. Never generate a new intent automatically on timeout. Pre-adapter global rate-limit queries, direct confirmation transactions, database statement timeouts and concurrency limits remain separate pending work. No schema migration or new environment variable is required.
+Validation: targeted deadline tests cover success, preserving operation errors, timeout and abort propagation.
