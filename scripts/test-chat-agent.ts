@@ -26,6 +26,7 @@ async function main() {
   });
   assert.equal(calls, 1);
   assert(events.some((event) => event.type === "private" && JSON.stringify(event.data).includes("PRIVATE_SENTINEL")));
+  assert(!events.some((event) => event.type === "result" && JSON.stringify(event.data).includes("PRIVATE_SENTINEL")));
   assert(!JSON.stringify(seen).includes("PRIVATE_SENTINEL"));
   assert(!JSON.stringify(seen).includes("fixture-key"));
   assert(JSON.stringify(seen).includes('"store":false'));

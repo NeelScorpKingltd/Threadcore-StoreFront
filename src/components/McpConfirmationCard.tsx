@@ -1,5 +1,8 @@
 "use client";
 import { useState } from "react";
+import { Check, ShieldCheck, X } from "lucide-react";
+import { money } from "./ChatResult";
+import styles from "./StoreChat.module.css";
 export function McpConfirmationCard({ id, preview, initialStatus = "pending" }: { id: string; preview: Record<string, unknown>; initialStatus?: string }) {
   const [status, setStatus] = useState(initialStatus);
   async function submit(confirm: boolean) {
@@ -10,8 +13,13 @@ export function McpConfirmationCard({ id, preview, initialStatus = "pending" }: 
       setStatus(response.ok ? result.status : "failed");
     } catch { setStatus("failed"); }
   }
-  return <section aria-label="Confirm proposed change"><h3>{preview.operation === "cancel" ? "Cancel order" : preview.operation === "delete" ? "Delete address" : "Add address"}</h3>
-    <dl>{Object.entries(preview).filter(([key]) => key !== "operation").map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{typeof value === "object" && value !== null ? Object.entries(value).filter(([k]) => k !== "id").map(([k,v]) => `${k}: ${String(v)}`).join(", ") : String(value)}</dd></div>)}</dl>
-    <p role="status">{status === "expired" ? "This proposal expired. Request a new proposal." : status === "executed" ? "Change completed." : status === "rejected" ? "Proposal rejected. No change executed." : status}</p><button disabled={!["pending", "failed"].includes(status)} onClick={() => submit(true)}>Confirm</button>
-    <button disabled={status !== "pending"} onClick={() => submit(false)}>Reject</button></section>;
+  const address = preview.address && typeof preview.address === "object" ? preview.address as Record<string, unknown> : preview;
+  const addressText = ["street", "city", "state", "postalCode", "country"].map((key) => typeof address[key] === "string" ? address[key] : "").filter(Boolean).join(", ");
+  const actionable = ["pending", "failed"].includes(status);
+  return <section className={styles.confirmation} aria-label="Confirm proposed change">
+    <div className={styles.confirmationTitle}><ShieldCheck size={15} /><span>{preview.operation === "cancel" ? "Cancel order" : preview.operation === "delete" ? "Remove address" : "Add address"}</span></div>
+    {preview.operation === "cancel" ? <dl className={styles.confirmationDetails}><div><dt>Order</dt><dd>{String(preview.orderNumber ?? "")}</dd></div><div><dt>Amount</dt><dd>{money(preview.totalAmountCents)}</dd></div><div><dt>Reason</dt><dd>{String(preview.reason ?? "")}</dd></div></dl> : <p className={styles.confirmationAddress}>{addressText}</p>}
+    <p className={styles.confirmationStatus} role="status">{status === "pending" ? "Review carefully. This change needs your approval." : status === "working" ? "Saving your decision…" : status === "expired" ? "This proposal expired. Request a new one." : status === "executed" ? "Change completed." : status === "rejected" ? "Declined. Nothing was changed." : "We couldn’t save your decision. You can safely retry."}</p>
+    {actionable && <div className={styles.confirmationButtons}><button onClick={() => submit(true)}><Check size={12} />Confirm change</button><button onClick={() => submit(false)}><X size={12} />Decline</button></div>}
+  </section>;
 }

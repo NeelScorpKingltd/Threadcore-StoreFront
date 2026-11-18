@@ -3,15 +3,18 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { McpConfirmationCard } from "./McpConfirmationCard";
+import { ChatResult } from "./ChatResult";
+import { ArrowUpRight, ArrowUp, Sparkles, ShieldCheck, KeyRound, LockKeyhole, ShoppingBag, Compass, Package, LogIn, CircleCheck, Square, RefreshCw, Plus, X } from "lucide-react";
+import styles from "./StoreChat.module.css";
 
-type Message = { role: "user" | "assistant"; content: string };
+type Message = { role: "user" | "assistant"; content: string; results?: { tool: string; data: unknown }[] };
 type Action = { id: string; preview: Record<string, unknown>; status: string };
 type PrivateTool = "profile_read" | "addresses_read" | "orders_read" | "addresses_write" | "orders_write";
-const inputClass = "w-full rounded-md border border-stone-300 bg-white p-2 text-sm";
-const buttonClass = "rounded-md bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-40";
+const toolLabels: Record<string, string> = { catalog_read: "Finding your next favourite", cart_read: "Taking a look at your cart", cart_write: "Updating your selection", profile_read: "Opening your profile", addresses_read: "Opening saved addresses", addresses_write: "Preparing a private address form", orders_read: "Finding your orders", orders_write: "Preparing a cancellation request" };
 
 export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | null; stagingKeyAvailable: boolean }) {
   const [key, setKey] = useState("");
+  const [keyOpen, setKeyOpen] = useState(!stagingKeyAvailable);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,10 +28,17 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const active = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const identity = useRef(userId);
+  const transcript = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = transcript.current;
+    if (node && node.scrollHeight - node.scrollTop - node.clientHeight < 180) node.scrollTop = node.scrollHeight;
+  }, [messages]);
 
   function endSession() {
     generation.current++; active.current?.abort(); active.current = null;
     setKey(""); setMessages([]); setText(""); setPrivateResult(undefined); setActions([]); setFields({}); setBusy(false); setStatus("");
+    setKeyOpen(true);
   }
   useEffect(() => {
     const { data: { subscription } } = createClient().auth.onAuthStateChange((_event, session) => {
@@ -42,10 +52,11 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
 
   async function send(event: React.FormEvent) {
     event.preventDefault(); if (busy || !text.trim()) return;
+    if (!key && !stagingKeyAvailable) { setKeyOpen(true); setStatus("Add your session key above to start chatting."); return; }
     if (key && text.includes(key)) { setText(""); setStatus("Enter your key only in the key field, not in chat."); return; }
     const current = generation.current;
-    const history: Message[] = [...messages, { role: "user" as const, content: text.trim() }].filter((message) => message.content.trim()).slice(-18).map((message) => ({ ...message, content: message.content.slice(0, 2000) }));
-    setMessages([...history, { role: "assistant", content: "" }]); setText(""); setBusy(true); setStatus("Connecting…");
+    const history = [...messages, { role: "user" as const, content: text.trim() }].filter((message) => message.content.trim()).slice(-18).map((message) => ({ role: message.role, content: message.content.slice(0, 2000) }));
+    setMessages([...messages, { role: "user", content: text.trim() }, { role: "assistant", content: "" }].slice(-20) as Message[]); setText(""); setBusy(true); setStatus("Getting ready to help…");
     const controller = new AbortController(); active.current = controller;
     let complete = false;
     try {
@@ -65,7 +76,8 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
             if (!line || generation.current !== current) continue;
             const item = JSON.parse(line);
             if (item.type === "text") setMessages((previous) => previous.map((message, index) => index === previous.length - 1 ? { ...message, content: message.content + item.text } : message));
-            if (item.type === "activity") setStatus(`Using ${item.tool}…`);
+            if (item.type === "activity") setStatus(`${toolLabels[item.tool] || "Working on your request"}…`);
+            if (item.type === "result") setMessages((previous) => previous.map((message, index) => index === previous.length - 1 ? { ...message, results: [...(message.results ?? []), { tool: item.tool, data: item.data }] } : message));
             if (item.type === "private") { setPrivateTool(item.tool); setPrivateResult(item.data); setStatus("See the private action panel."); }
             if (item.type === "error") throw new Error(item.message);
             if (item.type === "done") complete = true;
@@ -96,7 +108,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
       if (generation.current !== current) return;
       if (!response.ok) { setStatus(response.status === 401 ? "Please sign in for private actions." : "Private action unavailable. Please try again later."); return; }
       if (confirmations) setActions(result.actions ?? []);
-      else { setPrivateResult(result.uiResult?.structuredContent?.data ?? result.uiResult ?? result); setStatus("Private result updated. For proposals, load confirmations next."); }
+      else { setPrivateResult(result.uiResult ?? result); setStatus(result.uiResult?.isError ? "That action couldn’t be completed. Check the details and try again." : "Your private workspace is up to date. Review any proposed changes below."); }
     } catch { if (generation.current === current) setStatus("Private action unavailable. Review its current state before retrying."); }
     finally { if (generation.current === current) { setBusy(false); active.current = null; } }
   }
@@ -104,33 +116,69 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const names = privateTool === "addresses_write" ? operation === "delete" ? ["addressId"] : ["street", "city", "state", "postalCode", "country"]
     : privateTool === "orders_write" ? ["orderId", "reason"] : privateTool === "orders_read" ? ["orderId"] : [];
 
-  return <div className="mx-auto max-w-6xl px-4 py-8">
-    <div className="mb-6 flex justify-between gap-4"><div><h1 className="text-2xl font-semibold">ThreadCore assistant</h1><p className="mt-1 text-sm text-stone-600">Browse products, manage your cart, and use private account actions.</p></div><button onClick={endSession} className="text-sm underline">End session</button></div>
-    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-      <section className="space-y-4 rounded-xl border border-stone-200 bg-white p-4" aria-label="Shopping chat">
-        <label className="block text-sm">Your OpenAI API key<input aria-label="OpenAI API key" type="password" autoComplete="off" spellCheck={false} value={key} onChange={(event) => setKey(event.target.value)} className={`${inputClass} mt-1`} placeholder={stagingKeyAvailable ? "Optional: staging test key is configured" : "Enter your session key"} disabled={busy} /></label>
-        <p className="text-xs leading-relaxed text-stone-500">Your key stays in memory for this session and is sent over HTTPS through our backend to OpenAI. Provider charges and data policies apply. Chat messages, products and cart results go to OpenAI; use the private panel for profile, address and order details. We do not save keys or conversations.</p>
-        <div className="max-h-[28rem] min-h-64 space-y-3 overflow-auto rounded-lg bg-stone-50 p-3" aria-live="polite">
-          {!messages.length && <p className="text-sm text-stone-500">Try “Show me five products in stock” or “What is in my cart?”</p>}
-          {messages.map((message, index) => <div key={index} className={`rounded-lg p-3 text-sm whitespace-pre-wrap break-words ${message.role === "user" ? "ml-6 bg-stone-900 text-white" : "mr-6 border border-stone-200 bg-white"}`}><span className="mb-1 block text-xs font-medium opacity-60">{message.role === "user" ? "You" : "Assistant"}</span>{message.content || "Working…"}</div>)}
+  const section = privateTool.startsWith("addresses") ? "addresses" : privateTool.startsWith("orders") ? "orders" : "profile";
+  const connected = Boolean(key || stagingKeyAvailable);
+  const labels: Record<string, string> = { addressId: "Address reference", street: "Street address", city: "City", state: "State / region", postalCode: "Postal code", country: "Country", orderId: "Order reference", reason: "Reason for cancellation" };
+  function chooseAction(tool: string, id: string) {
+    setPrivateTool(tool as PrivateTool); setFields(tool === "addresses_write" ? { addressId: id } : { orderId: id });
+    setOperation("delete"); setPrivateResult(undefined);
+  }
+  function chooseSection(name: string) {
+    setPrivateTool((name === "addresses" ? "addresses_read" : name === "orders" ? "orders_read" : "profile_read"));
+    setFields({}); setPrivateResult(undefined);
+  }
+
+  return <div className={styles.page}>
+    <header className={styles.topline}>
+      <div className={styles.brandline}><div className={styles.brandMark}><Sparkles size={20} strokeWidth={1.4} /></div><div><p className={styles.eyebrow}>ThreadCore / Personal assistant</p><p className={styles.subheading}>A little guidance. A better find.</p></div></div>
+      <div className={styles.topActions}><span className={styles.pill}><span className={styles.dot} />{signedIn ? "Member session" : "Guest session"}</span><button className={styles.textButton} onClick={endSession}><X size={13} />End session</button></div>
+    </header>
+    <div className={styles.layout}>
+      <section className={styles.conversation} aria-label="Shopping chat">
+        <div className={styles.conversationHead}><strong>Your shopping companion</strong><span className={styles.liveLabel}><span className={styles.dot} />{connected ? "Ready when you are" : "Set up your session"}</span></div>
+        <details className={styles.session} open={keyOpen} onToggle={(event) => setKeyOpen(event.currentTarget.open)}>
+          <summary><KeyRound size={13} />{key ? "Session key added" : stagingKeyAvailable ? "Using staging test access" : "Connect your OpenAI key"}<span>{connected ? "Manage access" : "Session only"} <ArrowUpRight size={11} className="inline" /></span></summary>
+          <div className={styles.keyArea}><label className={styles.fieldLabel} htmlFor="chat-session-key">OpenAI API key</label><input id="chat-session-key" type="password" autoComplete="off" spellCheck={false} value={key} onChange={(event) => setKey(event.target.value)} className={styles.input} placeholder={stagingKeyAvailable ? "Optional — staging test access is available" : "Paste your key to start chatting"} disabled={busy} /><p className={styles.keyHelp}>Your key is held in memory for this session and sent through our backend to OpenAI. Provider charges and data policies apply. End this session or refresh to clear it.</p></div>
+        </details>
+        <div ref={transcript} className={styles.transcript} role="log" aria-live="polite" aria-label="Conversation">
+          {!messages.length && <div className={styles.empty}>
+            <div className={styles.orbit}><Sparkles size={31} strokeWidth={1.2} /></div>
+            <h1 className={styles.heroTitle}>Your next<br /><em>favourite find.</em></h1><p className={styles.heroCopy}>Thoughtfully chosen essentials, with a little help finding what feels like you.</p>
+            <div className={styles.suggestions}>
+              {[{ icon: Compass, label: "Explore the collection", prompt: "Show me five products in stock." }, { icon: ShoppingBag, label: "Review my selection", prompt: "What is in my cart?" }, { icon: Package, label: "Find my orders", prompt: "Show my orders in the private panel." }].map(({ icon: Icon, label, prompt }) => <button key={label} className={styles.suggestion} onClick={() => setText(prompt)}><Icon size={16} strokeWidth={1.3} /><span>{label}</span></button>)}
+            </div>
+          </div>}
+          {messages.map((message, index) => <article key={index} className={styles.message + (message.role === "user" ? " " + styles.userMessage : "")}>
+            <div className={styles.messageTitle}>{message.role === "assistant" && <span className={styles.assistantAvatar}><Sparkles size={13} /></span>}{message.role === "user" ? "You" : "ThreadCore"}</div>
+            {message.content ? <p className={styles.messageText}>{message.content}</p> : busy && index === messages.length - 1 ? <div className={styles.typing} aria-label="Assistant is working"><span /><span /><span /></div> : <p className={styles.resultNote}>This reply ended before any text was received.</p>}
+            {message.results?.map((result, resultIndex) => <ChatResult key={resultIndex} tool={result.tool} data={result.data} />)}
+          </article>)}
         </div>
-        <form onSubmit={send} className="flex gap-2"><input aria-label="Message" maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} className={inputClass} placeholder="Ask about the store…" disabled={busy} /><button className={buttonClass} disabled={busy || (!key && !stagingKeyAvailable) || !text.trim()}>Send</button></form>
-        {busy && <button onClick={() => active.current?.abort()} className="text-sm underline">Stop</button>}
-        <p role="status" className="text-sm text-stone-600">{status}</p>
-        <div className="flex gap-4 text-sm underline"><Link href="/checkout">Go to checkout</Link>{!signedIn && <Link href="/login">Sign in for private actions</Link>}</div>
+        <div className={styles.composerArea}>
+          {status && <p role="status" className={styles.status}>{status}</p>}
+          <form onSubmit={send} className={styles.composer}><textarea aria-label="Message" rows={1} maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} placeholder={connected ? "Find something you’ll love…" : "Add your session key above to get started…"} disabled={busy} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />{busy ? <button type="button" aria-label="Stop response" className={styles.send} onClick={() => active.current?.abort()}><Square size={12} fill="currentColor" /></button> : <button type="submit" aria-label="Send message" className={styles.send} disabled={!connected || !text.trim()}><ArrowUp size={18} /></button>}</form>
+          <div className={styles.composerFoot}><span className={styles.footNote}><LockKeyhole size={10} />Session only. Nothing saved by ThreadCore.</span><span>Chat text, products & cart go to OpenAI.<br />Keep personal details in your private workspace.</span></div>
+        </div>
       </section>
-      <aside className="space-y-4 rounded-xl border border-stone-200 bg-white p-4" aria-label="Private account actions">
-        <h2 className="font-semibold">Private account actions</h2><p className="text-xs text-stone-500">Details here are sent to your account tools, never to the model. Changes require your confirmation.</p>
-        {!signedIn && <Link href="/login" className="block text-sm underline">Sign in to continue</Link>}
-        <select aria-label="Private action" className={inputClass} value={privateTool} disabled={busy || !signedIn} onChange={(event) => { setPrivateTool(event.target.value as PrivateTool); setFields({}); setPrivateResult(undefined); }}>
-          <option value="profile_read">View profile</option><option value="addresses_read">View addresses</option><option value="addresses_write">Add / delete address</option><option value="orders_read">View orders</option><option value="orders_write">Propose cancellation</option>
-        </select>
-        {privateTool === "addresses_write" && <select aria-label="Address operation" className={inputClass} disabled={busy} value={operation} onChange={(event) => setOperation(event.target.value)}><option value="add">Add address</option><option value="delete">Delete address</option></select>}
-        {names.map((name) => <label key={name} className="block text-xs">{name}{name === "orderId" && privateTool === "orders_read" ? " (optional; leave empty to list)" : ""}<input className={`${inputClass} mt-1`} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy || !signedIn} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
-        <button className={buttonClass} disabled={busy || !signedIn} onClick={() => privateRequest()}>Run private action</button>
-        {privateResult !== undefined && <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-stone-50 p-3 text-xs">{JSON.stringify(privateResult, null, 2)}</pre>}
-        <button disabled={busy || !signedIn} onClick={() => privateRequest(true)} className="block text-sm underline disabled:opacity-40">Load confirmations</button>
-        {actions.map((action) => <div className="rounded border border-stone-200 p-3 text-sm" key={`${action.id}:${action.status}`}><McpConfirmationCard id={action.id} preview={action.preview} initialStatus={action.status} /></div>)}
+      <aside className={styles.sidebar} aria-label="Private account actions">
+        <section className={styles.privatePanel}>
+          <div className={styles.panelTitle}><h2>Your workspace</h2><LockKeyhole size={15} strokeWidth={1.4} /></div><p className={styles.panelCopy}>Personal details belong here. Your profile, addresses and orders stay out of the model’s context.</p>
+          <div className={styles.tabs} role="group" aria-label="Account sections">{["profile", "addresses", "orders"].map((name) => <button key={name} className={styles.tab + (section === name ? " " + styles.activeTab : "")} disabled={busy} onClick={() => chooseSection(name)}>{name[0].toUpperCase() + name.slice(1)}</button>)}</div>
+          {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
+            <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}{section === "orders" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("orders_write"); setFields({}); setPrivateResult(undefined); }}>Cancel an order</button>}</div>
+            <div className={styles.form}>
+              {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => setOperation(event.target.value)}><option value="add">Add a new address</option><option value="delete">Remove a saved address</option></select></>}
+              {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
+              <button className={styles.primary} disabled={busy} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
+            </div>
+            {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
+            <div className={styles.confirmHead}><span>Awaiting your approval</span><button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)} aria-label="Refresh confirmations"><RefreshCw size={11} />Load</button></div>
+            {!actions.length && <p className={styles.confirmEmpty}>Proposed changes appear here for you to review. Nothing happens until you confirm.</p>}
+            {actions.map((action) => <McpConfirmationCard key={action.id + ":" + action.status} id={action.id} preview={action.preview} initialStatus={action.status} />)}
+          </>}
+        </section>
+        <section className={styles.privacyCard}><ShieldCheck size={22} strokeWidth={1.2} /><h3>Designed around your privacy.</h3><p>You’re in control. Your key stays in this session, and sensitive changes always wait for your approval.</p><span><CircleCheck size={11} />No saved keys or chat history</span></section>
+        <div className={styles.sidebarFooter}><span>Curated by ThreadCore.</span><Link href="/checkout">Go to checkout <ArrowUpRight size={11} /></Link></div>
       </aside>
     </div>
   </div>;

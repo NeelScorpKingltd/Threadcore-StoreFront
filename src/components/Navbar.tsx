@@ -1,4 +1,5 @@
 import React from "react";
+import { ChatBubble } from "./ChatBubble";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCart } from "@/services/cart.service";
@@ -25,7 +26,7 @@ export async function Navbar() {
     (user?.user_metadata?.full_name as string) || user?.email || "";
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-stone-200/80 bg-[#FAF9F6]/90 backdrop-blur-md">
+    <><header className="sticky top-0 z-40 w-full border-b border-stone-200/80 bg-[#FAF9F6]/90 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Brand */}
         <div className="flex items-center space-x-8">
@@ -68,7 +69,7 @@ export async function Navbar() {
 
         {/* Right Actions: Profile on left, Cart Button on the far right */}
         <div className="flex items-center space-x-4 sm:space-x-5">
-          <Link href="/chat" className="text-xs font-medium text-stone-700 hover:underline">Chat</Link>
+
           {/* User / Profile Section */}
           {user ? (
             <div className="flex items-center space-x-3">
@@ -118,5 +119,7 @@ export async function Navbar() {
         </div>
       </div>
     </header>
+      <ChatBubble key={user?.id ?? "guest"} userId={user?.id ?? null} stagingKeyAvailable={process.env.VERCEL_ENV === "preview" && Boolean(process.env.THREADCORE_OPENAI_STAGING_KEY)} />
+    </>
   );
 }

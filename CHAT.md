@@ -32,3 +32,6 @@ Cart request IDs are derived server-side from the turn UUID and canonical action
 6. End session and refresh: key/history/private results should be empty. Check logout/account switching and stopped requests for stale results.
 
 `npm run test:agent` uses mocked provider and MCP fixtures: it checks privacy projections, private UI handoff, loop limits, deterministic cart IDs and split SSE parsing without real keys, billing or network requests. A live OpenAI acceptance test is still required after deployment.
+
+## Refined interface
+The chat now uses a responsive editorial layout with prompt suggestions, a collapsible session-key control, tool activity, readable product/cart cards and a separate private workspace. Product/cart UI events are held only in client memory and explicitly excluded from the text history sent back to the model. Private data stays in the workspace; saved address/order cards can prefill a removal/cancellation form without copying UUIDs. Confirmation cards render saved previews and decisions as text. Product images are limited to the already allowed Unsplash host, and links target the fixed storefront product path. Keyboard focus and reduced-motion styles are included. No storage, provider, mutation or confirmation authorization behavior was added by this visual refinement.
