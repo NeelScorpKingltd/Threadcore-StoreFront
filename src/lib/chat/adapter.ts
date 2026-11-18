@@ -23,6 +23,13 @@ export async function withChatTools<T>(request: Request, work: (client: Client) 
       // SDK initialization and every call get fresh hidden credentials. Never forward
       // browser headers wholesale, allow redirects, or place credentials in tool args.
       const secured = delegation.transportRequest(await outbound.text());
+      // Vercel Preview deployments may require Protection Bypass for Automation
+      // for this same-origin server-to-server call. The secret is server-only and
+      // is attached only in Preview to the already-validated fixed MCP endpoint.
+      const bypassSecret = process.env.VERCEL_ENV === "preview"
+        ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+        : undefined;
+      if (bypassSecret) secured.headers.set("x-vercel-protection-bypass", bypassSecret);
       const protocol = outbound.headers.get("mcp-protocol-version");
       if (protocol) secured.headers.set("mcp-protocol-version", protocol);
       return fetch(secured);
