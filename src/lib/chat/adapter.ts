@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { privateMcpAuthentication } from "@/lib/mcp-auth/server";
 import { readBoundaryConfig } from "@/lib/mcp-auth/config";
+import { enforceChatRateLimit } from "./rate-limit";
 
 export const TOOL_NAMES = ["catalog_read", "cart_read", "cart_write", "profile_read", "addresses_read", "addresses_write", "orders_read", "orders_write"] as const;
 export type ToolName = typeof TOOL_NAMES[number];
@@ -48,7 +49,8 @@ export async function withChatTools<T>(request: Request, work: (client: Client) 
   const authentication = privateMcpAuthentication();
   const config = readBoundaryConfig();
   // Establish the current browser context before any transport is opened.
-  await authentication.delegateFromBrowser(request);
+  const initialDelegation = await authentication.delegateFromBrowser(request);
+  await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
   const client = new Client({ name: "threadcore-chat-backend", version: "1.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(`${config.origin}/api/mcp`), {
     fetch: async (input, init) => {

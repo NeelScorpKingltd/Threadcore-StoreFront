@@ -20,14 +20,17 @@ const digest = (value: string) => createHash("sha256").update(value).digest("bas
 
 // Private fields prevent accidental credential serialization into a tool result/log.
 export class InternalDelegation {
+  #subject: string;
   #headers: Headers;
   #endpoint: string;
-  constructor(token: string, origin: string, sessionToken?: string) {
+  constructor(token: string, origin: string, sessionToken?: string, subject = "anonymous") {
+    this.#subject = subject;
     this.#endpoint = `${origin}/api/mcp`;
     this.#headers = new Headers({ authorization: `Bearer ${token}` });
     if (sessionToken) this.#headers.set(SESSION_PROOF_HEADER, sessionToken);
   }
   transportHeaders(): Headers { return new Headers(this.#headers); }
+  rateLimitSubject(): string { return this.#subject; }
   transportRequest(body: string): Request {
     const headers = this.transportHeaders();
     headers.set("content-type", "application/json");
@@ -91,7 +94,7 @@ export function createAuthenticationBoundary(config: BoundaryConfig, deps: Depen
       .setIssuer(config.issuer).setAudience(config.audience).setSubject(identity?.userId ?? "anonymous")
       .setJti(randomUUID()).setIssuedAt(issuedAt).setNotBefore(issuedAt).setExpirationTime(expiresAt)
       .sign(config.keys.get(config.activeKid)!);
-    return new InternalDelegation(token, config.origin, identity?.token);
+    return new InternalDelegation(token, config.origin, identity?.token, identity?.userId);
   }
 
   async function authenticateInvocation(request: Request, permission: Permission): Promise<Principal> {

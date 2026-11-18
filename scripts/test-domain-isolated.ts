@@ -59,9 +59,24 @@ async function main() {
     await connection.unsafe("CREATE SCHEMA auth; CREATE TABLE auth.sessions(id uuid PRIMARY KEY, user_id uuid NOT NULL, not_after timestamptz);");
     await connection.unsafe(await readFile("migrations/phase3-session-verification.sql", "utf8"));
     await connection.unsafe(await readFile("migrations/phase5-pending-actions.sql", "utf8"));
+    await connection.unsafe("DROP TABLE mcp_rate_limits");
+    await connection.unsafe(await readFile("migrations/phase7-rate-limits.sql", "utf8"));
     process.env.DATABASE_URL = url;
     const { db } = await import("../src/lib/db/client");
     closeApp = () => db.$client.end();
+    const { enforceChatRateLimit } = await import("../src/lib/chat/rate-limit");
+    await check("distributed rate limit serializes concurrent requests and resets expired window", async () => {
+      const results = await Promise.allSettled(Array.from({ length: 12 }, () => enforceChatRateLimit("test:concurrent", 5)));
+      assert.equal(results.filter((result) => result.status === "fulfilled").length, 5);
+      for (const result of results) if (result.status === "rejected") assert.equal(result.reason.status, 429);
+      await connection`update mcp_rate_limits set window_start = now() - interval '2 minutes'`;
+      await enforceChatRateLimit("test:concurrent", 5);
+      await enforceChatRateLimit("test:separate-user", 5);
+      const [permissions] = await connection`select has_table_privilege('anon', 'public.mcp_rate_limits', 'SELECT') as anon_read,
+        has_table_privilege('authenticated', 'public.mcp_rate_limits', 'UPDATE') as browser_write`;
+      assert.equal(permissions.anon_read, false);
+      assert.equal(permissions.browser_write, false);
+    });
     const cart = await import("../src/services/cart.service");
     const users = await import("../src/services/user.service");
     const orders = await import("../src/services/order.service");

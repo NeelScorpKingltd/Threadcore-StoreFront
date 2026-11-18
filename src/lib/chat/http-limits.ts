@@ -39,6 +39,7 @@ export function limitedJsonResponse(value: unknown, limit = 512 * 1024): Respons
 
 export function chatHttpErrorResponse(error: ChatHttpError) {
   return Response.json({ error: { code: error.code } }, {
-    status: error.status, headers: { "cache-control": "no-store, private", vary: "Cookie" },
+    status: error.status, headers: { "cache-control": "no-store, private", vary: "Cookie",
+      ...(error.status === 429 ? { "retry-after": "60" } : {}) },
   });
 }

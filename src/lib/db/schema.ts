@@ -14,6 +14,12 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+export const mcpRateLimits = pgTable("mcp_rate_limits", {
+  bucketKey: text("bucket_key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  hits: integer("hits").notNull(),
+}, (table) => [check("mcp_rate_limits_hits_check", sql`${table.hits} > 0`)]).enableRLS();
+
 // ── Enums ──────────────────────────────────────────────────────────────
 export const orderStatusEnum = pgEnum("order_status", [
   "CONFIRMED",

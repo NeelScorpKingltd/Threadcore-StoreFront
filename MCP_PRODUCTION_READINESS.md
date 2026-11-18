@@ -78,3 +78,9 @@ Do not promote this integration to Production until all implementation items, li
 
 ## Increment 2 — browser payload limits
 Implemented streamed JSON body limits: tools 32 KiB, confirmations 4 KiB. Complete serialized responses are capped at 512 KiB. Oversized input returns 413, malformed JSON 400, oversized result 502. Byte counts are checked without trusting Content-Length. Boundary checks passed for valid, malformed, oversized streamed input and oversized output. Fix 1 was validated by the user in Preview. Rate limits, request deadlines and other roadmap gates remain pending.
+
+## Increment 3 — distributed rate limiting (local, pending staging migration)
+Shared PostgreSQL atomic counters now enforce 60 tool requests/customer/minute and 30 confirmation requests/customer/minute. Anonymous tool callers share the anonymous budget. Route-wide limits of 600 tools and 300 confirmations per minute run before authentication. Fixed-minute windows permit boundary bursts; these limits are initial staging defaults, not a substitute for perimeter DDoS controls. Rejections return 429 and Retry-After: 60. Counter-store outages fail closed with 503 RATE_LIMIT_UNAVAILABLE. Each subject uses one hashed row; review periodic deletion of inactive rows for retention. Direct MCP calls still require short-lived backend credentials; independent MCP ingress limiting, concurrency budgets and execution deadlines remain pending.
+Before deploying: apply migrations/phase7-rate-limits.sql in isolated staging. The reviewed server role needs SELECT/INSERT/UPDATE; non-owner roles also need a narrowly scoped server-only RLS policy. Browser roles are explicitly revoked. Do not push/deploy this code before the table exists. No production migration has been performed.
+
+Staging update: user reports phase7-rate-limits.sql applied successfully. Rate-limit code is ready for Preview deployment and live validation; production migration remains unapplied.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TOOL_NAMES, presentToolResult, withChatTools } from "@/lib/chat/adapter";
 import { authenticationErrorResponse } from "@/lib/mcp-auth/http";
+import { enforceChatRateLimit } from "@/lib/chat/rate-limit";
 import { ChatHttpError, chatHttpErrorResponse, limitedJsonResponse, readLimitedJson } from "@/lib/chat/http-limits";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ const schema = z.discriminatedUnion("operation", [
 ]);
 export async function POST(request: Request) {
   try {
+    await enforceChatRateLimit("global:tools", 600);
     // Authenticate/origin-check even malformed browser input before handling it.
     return await withChatTools(request, async (client) => {
       const parsed = schema.safeParse(await readLimitedJson(request, 32 * 1024));
