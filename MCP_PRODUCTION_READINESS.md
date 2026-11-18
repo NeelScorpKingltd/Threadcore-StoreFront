@@ -75,3 +75,6 @@ Checkout remains the storefront's existing `/checkout` flow. No model tool may p
 ## Acceptance rule
 
 Do not promote this integration to Production until all implementation items, live staging checks, production role/migration reviews, and security/dependency gates above are complete and recorded.
+
+## Increment 2 — browser payload limits
+Implemented streamed JSON body limits: tools 32 KiB, confirmations 4 KiB. Complete serialized responses are capped at 512 KiB. Oversized input returns 413, malformed JSON 400, oversized result 502. Byte counts are checked without trusting Content-Length. Boundary checks passed for valid, malformed, oversized streamed input and oversized output. Fix 1 was validated by the user in Preview. Rate limits, request deadlines and other roadmap gates remain pending.
