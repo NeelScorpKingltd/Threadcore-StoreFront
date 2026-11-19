@@ -1,3 +1,5 @@
+> Historical phase instructions. Current features and remaining work are recorded in README.md and MCP_PRODUCTION_READINESS.md. Test and playground commands referenced below were retired in the 2026-11-19 cleanup.
+
 # Phase 4 — private MCP transport and tools
 
 Implemented locally 2026-11-17. Phase 5 has not started. No deployment, production migration, OAuth change or LLM integration was performed.

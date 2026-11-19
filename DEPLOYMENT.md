@@ -1,12 +1,12 @@
 # Threadcore deployment guide
 
-This guide updates your **existing Git repository, existing Vercel storefront project, and existing Supabase database/authentication** with the private MCP integration. Do not create another production storefront, import the repository as a new Vercel project, replace existing customer accounts, or recreate the database. The full conversational chat is not built. The interactive playground is a separate local-only developer tool and must not be used as the production server.
+This guide updates your **existing Git repository, existing Vercel storefront project, and existing Supabase database/authentication** with the private MCP integration. Do not create another production storefront, import the repository as a new Vercel project, replace existing customer accounts, or recreate the database. The floating conversational assistant and its bounded OpenAI backend are implemented. See CHAT.md for privacy and session behavior.
 
 The repository is https://github.com/NeelScorpKingltd/Threadcore-StoreFront and the currently documented storefront is https://threadcore-beta.vercel.app/. Verify the actual canonical domain in your existing Vercel project before setting THREADCORE_APP_ORIGIN; use a custom domain instead if that is the storefront's canonical origin.
 
-Latest verification (2026-11-17): production build, type checking, lint, 14 authentication test groups, the official SDK transport harness and 22 isolated PostgreSQL groups passed. Removing the redundant custom Tailwind CSS loader resolved the previous local Turbopack build failure. Earlier phase notes describe historical failures; this guide records the current deployment state.
+Current status (2026-11-19). Source features and outstanding release gates are recorded in MCP_PRODUCTION_READINESS.md. Earlier test evidence is historical. The user requested removal of test suites and developer harnesses. Local route loading was verified after configuring the trusted database CA. Full live acceptance and production release remain pending.
 
-Cleanup removed five unreferenced starter SVGs, three unused UI primitives and the unmounted duplicate ChatIntegrationHarness. The reusable confirmation card, working playground, regression suites, migration history and read-only privilege utility are retained intentionally. The unused loader dependency and its seven-package dependency subtree were removed from the lockfile.
+Cleanup retains instruction documents, migration history, operational scripts and active application components. Test suites, manual tester, disposable playground, empty demo text and unused temporary schema output have been removed.
 
 ## Code structure
 
@@ -14,10 +14,11 @@ Cleanup removed five unreferenced starter SVGs, three unused UI primitives and t
 src/
   app/
     (auth)/                   Login / signup
-    (shop)/                   Catalogue, cart, profile, checkout, orders
+    (shop)/                   Catalogue, cart, profile, checkout, orders, chat entry
     actions/                  Storefront Server Actions; derive verified customer
     api/auth/callback/        Supabase callback
     api/mcp/route.ts          Private stateless MCP HTTP endpoint (Node.js)
+    api/chat/message/route.ts Streamed bounded OpenAI agent
     api/chat/tools/route.ts   Same-origin browser-to-MCP integration endpoint
     api/chat/confirm/route.ts Trusted confirmation list / Confirm / Reject
   lib/
@@ -35,11 +36,7 @@ src/
   proxy.ts                   Storefront session refresh; API handlers authenticate themselves
 migrations/                  Reviewed SQL upgrades and read-only metadata inspection
 scripts/
-  test-mcp-auth.ts            Offline credential/identity/CSRF checks
-  test-mcp-transport.ts       Official SDK client/transport checks
-  test-domain-isolated.ts    Real PostgreSQL domain/confirmation regression tests
   inspect-db-privileges.ts   Read-only role/RLS inspection
-  mcp-playground.ts/.html    Disposable local interactive playground
 ```
 
 Flow: browser → same-origin chat endpoint → private signed MCP request → shared services → Supabase PostgreSQL. Sensitive changes go through a separate trusted confirmation endpoint. Checkout remains the existing storefront `/checkout` flow. OAuth Server stays disabled.
@@ -94,7 +91,7 @@ Use Supabase's transaction pooler connection for serverless application queries;
 
 Keep the existing production Supabase authentication setup, Site URL, customer accounts, providers and callback settings. Verify that the canonical production origin's `/api/auth/callback` remains allowed; change it only if the actual domain requires it. Configure the staging project's Site URL and callback allowlist separately. Confirm the existing email/password signup/login behavior and email confirmation settings. MCP reuses these sessions; it needs neither a new login system nor Supabase OAuth Server.
 
-In the existing Vercel project, verify the current project root and Next.js preset. Use `npm ci` for installation and `npm run build` for the build command; let Vercel manage the output directory. Keep the pinned lockfile. Select a supported Node runtime compatible with the installed Next.js/SDK and your verified build (the local checks used Node 26). Review the existing function region against Supabase's region rather than creating a second project. The MCP route explicitly uses Node.js and maxDuration=30; confirm your plan/runtime supports the configured duration. The new `/api/mcp` and `/api/chat/*` routes deploy with the storefront; no separate MCP hosting service is required.
+In the existing Vercel project, verify the current project root and Next.js preset. Use `npm ci` for installation and `npm run build:secure` for the build command; let Vercel manage the output directory. Keep the pinned lockfile. Select a supported Node runtime compatible with the installed Next.js/SDK and your verified build (the local checks used Node 26). Review the existing function region against Supabase's region rather than creating a second project. The MCP route explicitly uses Node.js and maxDuration=30; confirm your plan/runtime supports the configured duration. The new `/api/mcp` and `/api/chat/*` routes deploy with the storefront; no separate MCP hosting service is required.
 
 The adapter self-fetches the exact configured origin's `/api/mcp`. When Vercel Preview has Protection Bypass for Automation configured, Vercel provides `VERCEL_AUTOMATION_BYPASS_SECRET`; the adapter attaches it as `x-vercel-protection-bypass` only on this server-side Preview request to the fixed MCP endpoint. Keep Preview protection enabled and never expose this secret to the browser/model. Redeploy after changing the bypass secret. Never use an arbitrary redirect/target URL. [Vercel protection guidance](https://vercel.com/docs/deployment-protection), [Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
 
@@ -108,19 +105,18 @@ Locally/CI run:
 npm ci
 npm run lint
 npx tsc --noEmit --incremental false
-npm test
-npm run build
+npm run build:secure
 ```
 
-The domain suite starts disposable local PostgreSQL and requires its platform binaries/install scripts. Do not substitute production credentials for local test failures. It never loads `.env.local`. `npm run mcp:playground` is local-only demo authentication and data; its success is not proof of live Supabase/Vercel behavior.
+Test suites and playground commands have been removed. CI retains dependency audit, source/history scans, scanner self-check, lint, TypeScript and a secure build. For local Turbopack worker failures, run npm run build -- --webpack followed by npm run security:artifacts.
 
 On isolated staging, verify anonymous catalogue only; logged-in cart operations; private reads; readable pending cards; Confirm/Reject/retry/expiry; changed order status; account switching and logout; fixed checkout navigation; and invalid/forged credentials. Confirm cookie/session refresh survives real browser requests. Verify that no raw session tokens, signing keys, proposal capabilities or address/order bodies enter model logs/history.
 
-No full chat is mounted yet. Integrate a future chat with `withChatTools`, keep uiResult separate from modelResult/history, and render `McpConfirmationCard` only using the authenticated confirmation-list response. Cards submit only ID/decision; never let a model invoke confirmation. The local playground is not part of Vercel routing.
+The floating assistant uses /api/chat/message and the existing private MCP adapter. UI payloads stay separate from model history. Address/order forms create proposals and automatically open an Accept/Decline popup. Cards submit only ID/decision to the authenticated confirmation endpoint.
 
 ## 6. Production gate and rollback
 
-Production readiness still requires the remaining Phase 7 work: distributed rate limits, redacted audit events, dependency/security review, request/result limits on all browser paths, connection/runtime review, artifact/secret scanning and successful live staging checks. Do not label the local prototype production-ready from test results alone. The installation currently reports 11 moderate dependency findings that need review.
+Production readiness requires full live acceptance, production role/migration review, capacity and runtime verification, log access/retention review and fresh release scans. Request limits, rate limits, audit events, TLS validation and the bounded agent are implemented. See MCP_PRODUCTION_READINESS.md for the current checklist.
 
 After these gates pass, separately authorize production migrations and release. Apply reviewed compatible migrations before code requiring the new tables/functions. Use production-only secrets and Supabase URLs. Do not promote a staging configuration with staging credentials as production.
 
@@ -135,7 +131,7 @@ For the existing live site, use this release order:
 For rollback, stop/disable chat writes first and roll back application code. Keep receipts, proposals and integrity constraints initially: deleting them destroys replay/history guarantees. Schema rollback requires a separate reviewed plan and backup. No production deployment or database migration was performed while preparing this guide.
 
 ## Security build and operations update
-See SECURITY_OPERATIONS.md for implemented runtime budgets, TLS trust, scan coverage, and the platform setup checklist. Use npm run build:secure as the Vercel Build Command to scan the actual deployment output after a successful build. GitHub Security checks also scan tracked source and reachable history, audit dependencies, run checks/tests, and build/scan without production credentials. Configure the workflow as a required branch check in GitHub; the repository cannot enforce that setting. The scanner is heuristic and no-match does not establish absence of arbitrary secrets. Remote PostgreSQL now requires validated TLS; configure THREADCORE_DB_CA_PEM with the trusted Supabase CA if your platform needs it. No new database migration is required for this increment. Before production, an administrator must configure log access/retention/drain/alerts and review aggregate Vercel/Supabase capacity; these are documented external setup tasks, not completed account changes.
+See SECURITY_OPERATIONS.md for implemented runtime budgets, TLS trust, scan coverage, and the platform setup checklist. Use npm run build:secure as the Vercel Build Command to scan the actual deployment output after a successful build. GitHub Security checks also scan tracked source and reachable history, audit dependencies, run static checks, and build/scan without production credentials. Configure the workflow as a required branch check in GitHub; the repository cannot enforce that setting. The scanner is heuristic and no-match does not establish absence of arbitrary secrets. Remote PostgreSQL now requires validated TLS; configure THREADCORE_DB_CA_PEM with the trusted Supabase CA if your platform needs it. No new database migration is required for this increment. Before production, an administrator must configure log access/retention/drain/alerts and review aggregate Vercel/Supabase capacity; these are documented external setup tasks, not completed account changes.
 
 ## Session-only chat deployment
-The /chat page and /api/chat/message route now provide the initial streamed OpenAI chat with the bounded existing MCP tools. See CHAT.md for credential/privacy behavior, private-form handoffs and acceptance steps. Production requires a visitor-supplied key held only in memory. Preview may optionally use THREADCORE_OPENAI_STAGING_KEY, configured as a Preview-only secret and honored only in VERCEL_ENV=preview. THREADCORE_OPENAI_MODEL defaults to gpt-5.4-mini; the key must have access and API billing. No database migration or new dependency is required. Confirm the 120-second message function duration is supported. Live OpenAI acceptance remains pending because local tests use fixtures. Audit chat_agent events for stream completion/failure; chat_request HTTP 200 records opening the stream, not proof that the agent finished successfully.
+The /chat page and /api/chat/message route now provide the initial streamed OpenAI chat with the bounded existing MCP tools. See CHAT.md for credential/privacy behavior, private-form handoffs and acceptance steps. Production requires a visitor-supplied key held only in memory. Preview may optionally use THREADCORE_OPENAI_STAGING_KEY, configured as a Preview-only secret and honored only in VERCEL_ENV=preview. THREADCORE_OPENAI_MODEL defaults to gpt-5.4-mini; the key must have access and API billing. No database migration or new dependency is required. Confirm the 120-second message function duration is supported. Full live OpenAI acceptance remains pending. Earlier mocked-provider checks are historical and their suites were removed during cleanup. Audit chat_agent events for stream completion/failure; chat_request HTTP 200 records opening the stream, not proof that the agent finished successfully.

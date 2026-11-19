@@ -1,6 +1,6 @@
 # Chat
 
-The storefront `/chat` page uses the existing MCP adapter and OpenAI Responses API. No new dependencies, database tables or conversation store are introduced. The initial model is `gpt-5.4-mini`; a server-only `THREADCORE_OPENAI_MODEL` setting can select another Responses/tool-compatible model, subject to separate testing and key access.
+The floating storefront assistant, also opened through `/chat`, uses the existing MCP adapter and OpenAI Responses API. No new dependencies, database tables or conversation store are introduced. The initial model is `gpt-5.4-mini`; a server-only `THREADCORE_OPENAI_MODEL` setting can select another Responses/tool-compatible model, subject to separate testing and key access.
 
 ## Key and session handling
 
@@ -14,7 +14,7 @@ Responses use `store:false` with no Conversations API or previous_response_id. T
 
 Chat text, public product data and minimized cart results can reach OpenAI. Users are told not to enter profile/address/order details in chat; use the private panel instead. Arbitrary user-entered personal text cannot be reliably classified/redacted automatically. Private form values and results never enter the message array or model requests. Profile/order/address reads execute under the current verified account and emit only a generic status to the model. Their data is rendered as text in the private panel.
 
-The model can select all eight named tool flows. Product/cart operations execute through MCP. Address writes and cancellations are UI handoffs: the model cannot supply their private fields or create/confirm a proposal. The human enters the fields in the private panel; the existing `/api/chat/tools` creates a proposal and `/api/chat/confirm` renders/consumes its saved preview. Load confirmations and explicitly Confirm/Reject. No confirmation IDs or capabilities are passed to the model. Checkout remains `/checkout`.
+The model can select all eight named tool flows. Product/cart operations execute through MCP. Address writes and cancellations are UI handoffs: the model cannot supply their private fields or create/confirm a proposal. The human enters the fields in the private panel; the existing `/api/chat/tools` creates a proposal and `/api/chat/confirm` renders/consumes its saved preview. After a proposal is created, an Accept/Decline modal opens with its saved preview. Closing the modal leaves the proposal pending. Use Review pending changes to reopen it. No confirmation IDs or capabilities are passed to the model. Checkout remains `/checkout`.
 
 ## Bounds and retries
 
@@ -28,10 +28,14 @@ Cart request IDs are derived server-side from the turn UUID and canonical action
 2. Enter a disposable, restricted-budget OpenAI test key, or configure the optional Preview-only key and redeploy.
 3. Ask for products as a guest. Request a cart/private read and confirm login is required.
 4. Sign in, reenter your key (account changes clear it), then test product search, cart reads and an explicit cart change.
-5. Test private reads, then private address/order forms and saved confirmation cards. Inspect provider request fixtures/log configuration to confirm private results stay out of model requests; never capture real headers.
+5. Test private reads, then private address/order forms and saved confirmation popups. Review provider payload construction and log configuration to confirm private results stay out of model requests; never capture real headers.
 6. End session and refresh: key/history/private results should be empty. Check logout/account switching and stopped requests for stale results.
 
-`npm run test:agent` uses mocked provider and MCP fixtures: it checks privacy projections, private UI handoff, loop limits, deterministic cart IDs and split SSE parsing without real keys, billing or network requests. A live OpenAI acceptance test is still required after deployment.
+Automated agent fixtures were removed during the requested cleanup. Live OpenAI and staging acceptance remain necessary. See MCP_PRODUCTION_READINESS.md for outstanding checks.
 
 ## Refined interface
 The chat now uses a responsive editorial layout with prompt suggestions, a collapsible session-key control, tool activity, readable product/cart cards and a separate private workspace. Product/cart UI events are held only in client memory and explicitly excluded from the text history sent back to the model. Private data stays in the workspace; saved address/order cards can prefill a removal/cancellation form without copying UUIDs. Confirmation cards render saved previews and decisions as text. Product images are limited to the already allowed Unsplash host, and links target the fixed storefront product path. Keyboard focus and reduced-motion styles are included. No storage, provider, mutation or confirmation authorization behavior was added by this visual refinement.
+
+
+## Current popup behavior
+The confirmation popup is rendered using a native modal dialog. Private action forms automatically load pending proposals after creating a change. Accept and Decline send only the proposal ID and decision to the existing authenticated endpoint. Closing the popup leaves the decision pending. Resolved cards stay visible until the popup closes. The workspace holds private forms and read results, while approvals appear in the popup.

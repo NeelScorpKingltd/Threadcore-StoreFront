@@ -4,21 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "mcp:playground": "node --conditions=react-server --import tsx scripts/mcp-playground.ts",
     "build": "next build",
     "build:secure": "npm run security:source && npm run build && npm run security:artifacts",
     "start": "next start",
     "lint": "eslint",
-    "test:domain": "node --conditions=react-server --import tsx scripts/test-domain-isolated.ts",
-    "test:auth": "node --conditions=react-server --import tsx scripts/test-mcp-auth.ts",
-    "test:mcp": "node --conditions=react-server --import tsx scripts/test-mcp-transport.ts",
-    "test:runtime": "node --conditions=react-server --import tsx scripts/test-chat-deadline.ts && node --conditions=react-server --import tsx scripts/test-chat-audit.ts && node --conditions=react-server --import tsx scripts/test-chat-capacity.ts",
-    "test:agent": "node --conditions=react-server --import tsx scripts/test-chat-agent.ts",
     "security:source": "node scripts/scan-security.mjs source",
     "security:history": "node scripts/scan-security.mjs history",
     "security:artifacts": "node scripts/scan-security.mjs artifacts",
-    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts",
-    "test": "npm run test:auth && npm run test:mcp && npm run test:runtime && npm run test:agent && npm run test:domain"
+    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -47,7 +40,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.11",
-    "embedded-postgres": "18.6.0-beta.19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "postcss": "^8.5.32",

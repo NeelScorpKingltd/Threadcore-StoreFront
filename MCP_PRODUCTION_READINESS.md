@@ -1,105 +1,49 @@
-# MCP production readiness and chat roadmap
+# Current implementation and production readiness
 
-Updated: 2026-11-18
+Updated 2026-11-19.
 
-## Current status
+## Implemented
 
-The MCP integration is **staging-only and not production-ready**. The Preview tester can authenticate, discover all eight tools, and complete a `cart_read` call. This proves one live read path, not the complete security, write, confirmation, or operational lifecycle. The first local data-minimization change below is complete and type/lint checked, but has not yet been pushed or deployed to Preview.
+- Existing storefront authentication, catalogue, carts, checkout, profiles, addresses, orders and transactional cancellation.
+- Private stateless MCP transport with eight grouped tools and validated schemas.
+- Verified Supabase identity and live session checks, short-lived signed delegation and exact-origin browser protection.
+- Minimized model-visible cart data and separate UI/model result contracts.
+- Bounded browser input/output, shared PostgreSQL rate counters, execution deadlines, per-process admission and database transaction timeouts.
+- Durable cart mutation receipts and atomic proposal/decision processing for sensitive changes.
+- Redacted request/tool/confirmation events, safe failure categories, source/history/artifact scanners and CI security checks.
+- Verified remote PostgreSQL TLS with optional trusted CA configuration.
+- A bounded OpenAI Responses agent with at most four model responses and three sequential tool calls per turn.
+- Session-only BYOK, optional Preview staging key, streamed replies, Stop and polite failure behavior.
+- Floating responsive chat bubble, product/cart cards, private account forms and automatic Accept/Decline confirmation popups.
+- Cleanup of test suites, developer tester/playground, unused temporary schema output and their scripts/dependency references.
 
-The tester at `/mcp-test` is Preview/local-development only. It is a manual tool caller, not a conversational chat, and no LLM provider or ReAct agent is connected. Do not expose it in Production or promote staging credentials, signing keys, or the Preview protection-bypass secret.
+The source implementation is complete for this initial feature scope. Production release remains gated by the outstanding checks below.
 
-## Findings to close before production
+## Evidence recorded so far
 
-### Data sent to a future model
+The user reported successful staging authentication, tool discovery, catalogue/cart responses and several mutation/confirmation checks. Vercel source/artifact scan output and security status checks were found and configured. Local agent/auth/domain/runtime suites passed during earlier development, before their requested removal.
 
-- The live `cart_read` sample included the customer `userId`, cart and product IDs, creation time, inventory count, and image URL. The first local fix now gives `modelResult` a curated cart projection without the customer UUID, timestamp, inventory count, image URL, or duplicated MCP wrapper. Opaque cart/product IDs remain only where needed for authorized follow-up cart calls. The UI result remains full for the signed-in customer's UI; further UI minimization is a later item.
-- `uiResult`, `modelResult`, `content`, and `structuredContent` currently duplicate much of the same response. The test console is intentionally verbose for diagnostics. The future chat UI should render a compact, human-readable projection and should not persist the MCP envelope.
-- Continue withholding address/order bodies from model context. Pending action IDs and confirmation capabilities must remain exclusively in the authenticated UI/API flow.
+The popup change was pushed as fa4ea19. Its deployment and full browser interaction checks have not been independently confirmed. The local /chat route returned HTTP 200 after adding the downloaded trusted Supabase certificate to ignored local configuration. This proves route loading only.
 
-### Resource and abuse controls
+## Remaining work
 
-- `/api/chat/tools` parses the browser body with `request.json()` and has no explicit streaming/body-size bound. The MCP transport has a 64 KiB input limit, but that is downstream of the browser adapter.
-- `/api/chat/confirm` reads the full body before enforcing its 4 KiB limit. Enforce the limit while streaming/reading, before allocating an unbounded body.
-- Add explicit request, response, tool-call count, concurrency, and execution-time budgets on every browser-facing path. The MCP tool result limit alone does not cap the adapter's complete response or the model context.
-- Add distributed per-customer and broader abuse rate limits to chat tools, MCP, and confirmation endpoints. Authentication does not prevent a valid user or bot from exhausting database/auth capacity.
+1. Verify the deployed release commit and run the full real-provider chat flow on isolated staging. Include guests, login, product search, cart add/set/remove and all private reads.
+2. Check desktop/mobile bubble layout, keyboard/focus behavior, Stop/errors, Accept/Decline, close/reopen, completed proposals and session cleanup on logout/account switching.
+3. Complete security/integrity acceptance for cross-account isolation, expired/forged credentials, oversized inputs/results, rate limits, concurrent and replayed decisions, proposal expiry, changed order state and failures during mutations. Order cancellation acceptance was previously skipped.
+4. Review aggregate Vercel/Supabase connection capacity, regional placement, observed latency and support for the configured function durations. Admission limits are per process.
+5. Verify production server role, grants and RLS behavior. Review legacy data, back up the database and apply compatible migrations in order before deploying dependent code.
+6. Prepare production origin, issuer, audience and signing keys independently. Keep staging database credentials and Preview bypass material scoped appropriately.
+7. Resolve the project-wide Vercel build-command dependency. The last reported main branch lacks build:secure. Ensure the production release source supplies it or adjust the dashboard before a main deployment.
+8. Verify operator log access and plan retention. Automated alerts were explicitly deferred and remain pending. A shared parent trace ID across internal requests is an optional improvement.
+9. Re-run dependency and source/history/artifact checks against the actual release source. Historical clean results do not establish the current remote artifact's status.
+10. Record the last good deployment, rollback procedure and production smoke checks, then authorize and perform the production rollout.
 
-### Operational security
+Production migrations, production role changes, automated alert delivery and production release have not been performed by these repository changes.
 
-- Add structured, redacted audit events for authenticated tool calls, proposal lifecycle transitions, denials, and failures. Use correlation IDs and safe error categories; never log cookies, bearer/session tokens, signing keys, bypass secrets, full address/order bodies, or unrestricted tool arguments/results.
-- The generic `AUTH_UNAVAILABLE` response is appropriately opaque to clients, but safe server-side failure categories are needed to distinguish configuration, Supabase verification, database session checks, and protected internal transport failures.
-- Triage the 11 moderate dependency findings recorded in `DEPLOYMENT.md`; review advisories and runtime exposure before choosing upgrades. Run dependency, source-secret, and deployment-artifact scans.
-- Review Vercel runtime/region, PostgreSQL pool/connection limits, TLS, timeout behavior, and monitoring under realistic concurrency.
-- The Preview automation bypass secret is project-wide capability material. Code sends it only server-side, only when `VERCEL_ENV=preview`, and only to the fixed MCP endpoint. Keep it secret and rotate/revoke it if exposed.
+## Scope and limitations
 
-### Database and live acceptance
+English is the initial language. Chat history and visitor keys have no application persistence. Personal text typed directly into chat can reach OpenAI, so private forms are provided for account details. store:false disables stored Responses application state while provider account data policies still apply.
 
-- Production database role, grants, RLS behavior, existing data compatibility, and the production migration plan have not been verified. RLS being enabled does not prove a direct server connection is constrained by it.
-- Before a production migration, back up the database and audit legacy quantities/default-address conflicts; apply reviewed migrations in order and verify the actual server role's narrow privileges. Never grant browser roles access to private MCP tables/session checks or raw `auth.sessions`.
-- Live staging verification is incomplete. Exercise anonymous catalogue access, authenticated private reads, cart add/set/remove, account switching/logout, forged/expired credentials, invalid schemas, body/result limits, rate limits, and protected-deployment self-fetch.
-- Exercise address/order proposal creation, saved previews, reject/confirm, expiry, duplicate/replayed decisions, concurrent decisions, changed order state, and rollback after injected failures. Confirm the Phase 5 schema is installed in staging before these checks.
-- Existing local suites cover important auth/transport/domain invariants, but local tests are not a substitute for live staging behavior. Lint and TypeScript passed after the Preview bypass integration; a local production build has encountered a Google Fonts network failure and a Turbopack CSS-worker panic. Require a clean Vercel Preview build and deployment before any release decision.
+The model can request private read flows and hand off sensitive writes to the UI. The human fills private fields and decides the saved proposal. Confirmation IDs and private bodies stay outside model history. Checkout and payment use the existing storefront flow.
 
-## Logical implementation sequence
-
-Complete one item, review it, and report its verification before moving to the next.
-
-1. **Minimize model-visible cart data** — remove the customer UUID and unrelated fields; provide only the cart projection and opaque references needed for safe follow-up tool calls. *(Implemented locally; lint and TypeScript pass; awaiting Preview deployment.)*
-2. **Bound all browser requests and responses** — enforce streamed byte limits before JSON parsing, cap serialized adapter responses, and reject oversized arguments/results consistently.
-3. **Add distributed rate limits and execution budgets** — per-user/IP protections as appropriate, concurrency limits, bounded tool calls, and timeouts.
-4. **Add redacted audit and safe diagnostics** — event allowlist, correlation IDs, retention/access controls, no secrets or raw private payloads.
-5. **Complete dependency/runtime/secret review** — triage advisories, scan source and deployment artifacts, and verify connection/TLS/runtime budgets.
-6. **Complete staging security and integrity acceptance** — run the scenarios above against the isolated Supabase Preview and record results.
-7. **Build the ReAct backend** — add a provider-neutral model adapter after output filtering and budgets exist. The model receives only allowlisted tool schemas and minimized history. Each turn is bounded by max tool calls, steps, tokens, output bytes, and wall time. Validate every proposed tool name/argument server-side; derive identity only from the verified session; reauthorize every tool call. Tool results return to the model only after filtering. The model may propose address/order changes but cannot approve them, access confirmation IDs, initiate checkout, or perform payment.
-8. **Build the authenticated chat UI** — conversation list/composer, loading/error states, tool activity, cancellation/retry handling, and accessible rendering. Render address/order previews from the separate authenticated pending-confirmation endpoint; only a human's Confirm/Reject action sends proposal ID/decision. Keep private UI data out of model history and clear client state on logout/account switch. Do not mount the Preview tester in Production.
-9. **Production release gate** — independently provision production origin/issuer/audience/signing keys, review production grants and migrations, back up, run compatibility checks, deploy through the configured Production Branch, and verify storefront plus MCP/confirmation paths with monitoring and rollback ready.
-
-## ReAct flow to implement
-
-```text
-Browser chat UI
-  -> same-origin authenticated chat API (CSRF/origin check, body cap, rate limit)
-  -> verify current Supabase user/session; never accept a model-supplied user ID
-  -> construct bounded model request from minimized conversation + allowlisted tools
-  -> model returns either a final answer or a proposed tool call
-  -> validate tool name/schema/permission and enforce per-turn budgets
-  -> execute read/safe cart operation, or save an address/order proposal only
-  -> filter tool output before returning it to the model
-  -> repeat within the bounded ReAct loop, or return final answer
-  -> for sensitive proposals, render a separate trusted UI card
-  -> human confirms/rejects through `/api/chat/confirm`; server rechecks identity,
-     ownership, expiry and business state, then atomically records the result
-```
-
-Checkout remains the storefront's existing `/checkout` flow. No model tool may place an order, charge payment, or confirm its own proposal. Conversation persistence, if added, needs explicit retention rules and must not store credentials, raw private order/address results, or confirmation capabilities.
-
-## Acceptance rule
-
-Do not promote this integration to Production until all implementation items, live staging checks, production role/migration reviews, and security/dependency gates above are complete and recorded.
-
-## Increment 2 — browser payload limits
-Implemented streamed JSON body limits: tools 32 KiB, confirmations 4 KiB. Complete serialized responses are capped at 512 KiB. Oversized input returns 413, malformed JSON 400, oversized result 502. Byte counts are checked without trusting Content-Length. Boundary checks passed for valid, malformed, oversized streamed input and oversized output. Fix 1 was validated by the user in Preview. Rate limits, request deadlines and other roadmap gates remain pending.
-
-## Increment 3 — distributed rate limiting (local, pending staging migration)
-Shared PostgreSQL atomic counters now enforce 60 tool requests/customer/minute and 30 confirmation requests/customer/minute. Anonymous tool callers share the anonymous budget. Route-wide limits of 600 tools and 300 confirmations per minute run before authentication. Fixed-minute windows permit boundary bursts; these limits are initial staging defaults, not a substitute for perimeter DDoS controls. Rejections return 429 and Retry-After: 60. Counter-store outages fail closed with 503 RATE_LIMIT_UNAVAILABLE. Each subject uses one hashed row; review periodic deletion of inactive rows for retention. Direct MCP calls still require short-lived backend credentials; independent MCP ingress limiting, concurrency budgets and execution deadlines remain pending.
-Before deploying: apply migrations/phase7-rate-limits.sql in isolated staging. The reviewed server role needs SELECT/INSERT/UPDATE; non-owner roles also need a narrowly scoped server-only RLS policy. Browser roles are explicitly revoked. Do not push/deploy this code before the table exists. No production migration has been performed.
-
-Staging update: user reports phase7-rate-limits.sql applied successfully. Rate-limit code is ready for Preview deployment and live validation; production migration remains unapplied.
-
-## Increment 4 — MCP adapter deadline
-The adapter has a shared 20-second deadline across its authentication, connection and tool callback. Expiry returns HTTP 504 MCP_TIMEOUT and aborts active MCP fetches. Checks before transport work prevent delayed authentication from starting a new fetch after expiry. Browser cancellation is propagated to the internal fetch. This is not database statement cancellation: work already executing remotely may commit after timeout. Retry cart writes with the same requestId; query/retry confirmations with the same pending action ID. Never generate a new intent automatically on timeout. Pre-adapter global rate-limit queries, direct confirmation transactions, database statement timeouts and concurrency limits remain separate pending work. No schema migration or new environment variable is required.
-Validation: targeted deadline tests cover success, preserving operation errors, timeout and abort propagation.
-
-## Increment 5 — redacted request and outcome events
-Chat tools and confirmation routes now emit structured events with server-generated request IDs, fixed route/stage labels, HTTP status and duration. Tool outcomes distinguish protocol-level failures even when HTTP is 200. Confirmation decision/outcome events are emitted after the transaction returns. Responses include x-threadcore-request-id for support. Logs omit identities, proposal IDs, cookies, tokens, arguments, results, error messages and stacks. Logging failures never trigger mutation retries. Stages distinguish input, authentication, rate-limit, transport, tool and confirmation failures; finer Supabase/configuration diagnostics remain pending. These Vercel logs are operational telemetry, not a durable tamper-resistant transaction audit ledger. Retention, access restrictions, alerting and log-drain configuration still need deployment review.
-
-## Increment 6 — ESLint dependency advisory remediation
-Updated the compatible TypeScript ESLint chain to 8.73.0, resolving minimatch to 11.0.9 in that chain. npm audit now reports 4 moderate findings (previously 11); npm audit --omit=dev reports zero. Remaining findings are the Drizzle Kit -> @esbuild-kit/esm-loader -> core-utils -> esbuild 0.18.20 chain, associated with GHSA-67mh-4wv8-2f99 (esbuild development-server CORS). This is development tooling, not proof of a deployed runtime vulnerability; build/tooling exposure still needs review. npm suggests downgrading Drizzle Kit to 0.18.1, which is not a reviewed compatible fix and was not applied. Review replacement/upgrade of that chain in a separate increment. Advisory fixed by this increment: GHSA-g3hv-75wg-m249. Lint and TypeScript passed. Registry advisory results are time-specific and do not constitute a full security clearance. Artifact/secret scans, runtime review and other roadmap gates remain pending.
-
-## Increment 7 — legacy loader esbuild remediation
-Added a scoped package override for @esbuild-kit/core-utils -> esbuild 0.25.12, reusing the patched version already used by Drizzle Kit. Removed stale nested esbuild 0.18.20 and its platform package entries from the lockfile; Drizzle Kit itself remains 0.31.11. npm audit now reports zero findings across production and development dependencies. This override crosses the legacy loader's declared ~0.18.20 range, so retain it as an explicit compatibility decision and revisit when upstream removes the deprecated loader. Verified both sync/async TypeScript transforms through core-utils, Drizzle migration generation and all 23 isolated PostgreSQL groups, lint, TypeScript and diff checks. No live database was accessed. This does not close artifact/secret scanning, runtime review, live security acceptance or production release gates.
-
-## Increment 8 — scanning, runtime controls and audit operations
-Implemented source/reachable-history/artifact scanning, a CI security workflow and build:secure gate; no matched signatures or configured local secrets in the reviewed source/history or fresh webpack build artifacts. Scanner coverage is heuristic and remote artifacts/history outside fetched refs are not certified. Added remote verified TLS (optional trusted CA), bounded pools, transaction-local SQL/lock timeouts, nested-read transaction reuse, direct MCP ingress/subject limits, per-process admission, confirmation deadlines, diagnostic stages/severity, and a tested aggregate alert evaluator. SECURITY_OPERATIONS.md records access/retention/alert setup and capacity assumptions. No new SQL migration is needed. Platform log access controls, drain, retention enforcement, alert delivery and aggregate Vercel/Supabase capacity review remain external configuration tasks. No external destination was supplied or configured. Local Turbopack build still panics in its CSS worker; webpack production build and artifact scan passed. Secret scanning does not prove absence of all secret formats; npm audit zero findings is not a full security clearance. Full live staging acceptance and production release gates remain open.
-
-## Initial session-only chat implementation
-Implemented the /chat UI, /api/chat/message streaming endpoint and bounded OpenAI Responses tool loop using the existing MCP adapter. Visitor keys and text history remain in memory only; Production has no shared-key fallback. Preview-only testing key is optional. Model-visible private profile/address/order results are withheld; private mutations use a human-filled UI form and existing saved confirmation flow. Three sequential tool calls and four model responses maximum, output and deadline budgets, safe cart intent IDs and no automatic mutation retries. Added fixture tests for privacy, handoff, limits, retry IDs and SSE parsing. No live provider acceptance or production release has been performed; inspect CHAT.md for remaining staging checks and provider retention boundaries.
+Test suites were removed at the user's request. CI retains static, dependency, scanner and build checks, but has no automated behavioral regression gate. Reintroducing focused tests is a future maintenance decision.

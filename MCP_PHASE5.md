@@ -1,3 +1,5 @@
+> Historical phase instructions. Current features and remaining work are recorded in README.md and MCP_PRODUCTION_READINESS.md. Test and playground commands referenced below were retired in the 2026-11-19 cleanup.
+
 # Phase 5 — trusted confirmations
 
 Completed locally; no Supabase migration or deployment was performed.

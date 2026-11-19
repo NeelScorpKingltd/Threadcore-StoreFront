@@ -56,14 +56,7 @@ export async function Navbar() {
             >
               Profile
             </Link>
-            {user && (process.env.VERCEL_ENV === "preview" || process.env.NODE_ENV === "development") && (
-              <Link
-                href="/mcp-test"
-                className="text-xs uppercase tracking-widest font-medium text-stone-500 transition-colors hover:text-stone-900"
-              >
-                MCP Test
-              </Link>
-            )}
+
           </nav>
         </div>
 

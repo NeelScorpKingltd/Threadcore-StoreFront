@@ -1,3 +1,5 @@
+> Historical phase instructions. Current features and remaining work are recorded in README.md and MCP_PRODUCTION_READINESS.md. Test and playground commands referenced below were retired in the 2026-11-19 cleanup.
+
 # Phase 6 — embedded-chat integration preparation
 
 Cleanup follow-up: the unmounted ChatIntegrationHarness was removed after the standalone interactive playground superseded it. McpConfirmationCard remains the future chat's reusable trusted card. See DEPLOYMENT.md for the current structure and successful build verification; this phase note retains historical context.

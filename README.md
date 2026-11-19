@@ -1,152 +1,57 @@
 # ThreadCore
 
-See [deployment instructions and code structure](DEPLOYMENT.md) for the private MCP integration, staging setup, migration order, environment variables and production gates.
+Updated 2026-11-19. ThreadCore is a Next.js 16 / React 19 apparel storefront with Supabase Authentication, PostgreSQL through Drizzle, a private MCP endpoint and an OpenAI shopping assistant.
 
-ThreadCore is a full-stack, high-concurrency editorial apparel storefront engineered with Next.js 16, React 19, Tailwind CSS v4, Supabase Authentication, and Drizzle ORM on PostgreSQL.
+## Current features
 
----
+- Catalogue filtering, product details, stock indicators and quick cart controls.
+- Signed-in carts, checkout, order history and cancellation, profile editing and saved addresses. Checkout locks inventory and validates stock transactionally. Cancellation restores inventory once.
+- Supabase SSR authentication, session refresh and validated internal redirects.
+- A floating chat bubble across storefront pages. It opens to approximately one-third of desktop width and nearly full width on phones. Collapse preserves the current in-memory session. Visiting /chat opens the assistant over the collection.
+- Streamed English chat, suggestions, activity indicators, Stop, product/cart cards and a private account workspace.
+- Production BYOK through a password field. Keys and conversation state stay in client memory for the current mounted session. Preview can use a server-only staging key.
+- Eight MCP tools for catalogue, cart, profile, addresses and orders. Guest chat can browse products. Customer data and mutations require verified login.
+- Address additions/removals and order cancellations use saved proposals. A modal displays the saved preview with Accept/Decline. Closing it leaves the proposal pending. Pending proposals can be reopened.
+- Product and minimized cart data can reach the model. Private account results and proposal capabilities stay in the authenticated UI flow.
 
-## Features
+## Implementation
 
-- **Editorial Luxury Storefront**: Minimalist, high-end visual design with responsive category ribbon tabs, stock status indicators ("Sold Out", "Low Stock"), and instant quick-add/quantity adjustments directly from the collection grid.
-- **Transactional Checkout & Concurrency Guards**:
-  - Deterministic row locking (`SELECT ... FOR UPDATE ORDER BY id ASC`) across cart items to eliminate database deadlock risks.
-  - Atomic conditional decrement (`inventory_count >= quantity`) preventing inventory overselling during simultaneous checkouts.
-- **Atomic Order Cancellation**:
-  - Atomic status transitions (`CONFIRMED` / `PROCESSING` &rarr; `CANCELLED`) ensuring stock is restored exactly once under concurrent cancellation requests.
-  - Strict guards preventing cancellation of shipped or delivered orders.
-- **Secure Authentication & Open Redirect Mitigation**:
-  - Supabase SSR Auth with session refresh via Next.js proxy architecture (`proxy.ts`).
-  - Strict internal path validation (`getSafeRedirectPath`) protecting auth callback redirects from external URL and protocol-relative injection attacks.
-- **User Profile & Address Management**:
-  - Multi-address management with default address selection.
-  - Profile name and detail customization.
-- **Currency Localization**:
-  - All catalog and checkout prices displayed in Indian Rupees (`₹`).
+Browser -> /api/chat/message -> bounded OpenAI Responses loop -> private MCP adapter -> /api/mcp -> shared domain services -> PostgreSQL.
 
----
+Private forms call /api/chat/tools. Sensitive changes create durable proposals. Only a browser decision through /api/chat/confirm can execute them after ownership, expiry and business-state checks.
 
-## Tech Stack
+The backend validates tool schemas, verifies Supabase user/session state, signs short-lived delegated credentials and checks exact origins. Streamed request/response caps, shared rate limits, process admission limits, deadlines, SQL timeouts, mutation receipts and redacted operational events are implemented.
 
-- **Framework**: Next.js 16.4.6 (App Router, Turbopack, Server Actions)
-- **UI & Styling**: React 19, Tailwind CSS v4, Lucide React icons
-- **Database & ORM**: PostgreSQL (Supabase) via Drizzle ORM and `postgres.js`
-- **Authentication**: Supabase SSR (`@supabase/ssr`)
-- **Type Safety**: TypeScript 5 (Strict Mode)
+## Code structure
 
----
+- src/app/(shop) contains collection, product, cart, checkout, orders, profile and /chat routes.
+- src/app/(auth), src/app/actions and src/proxy.ts contain authentication pages, storefront mutations and session refresh.
+- src/app/api contains the Supabase callback, private MCP endpoint and chat message/tools/confirm routes.
+- src/components contains storefront controls, ChatBubble, StoreChat, ChatResult and McpConfirmationCard.
+- src/lib/chat contains the OpenAI loop, adapter, budgets, rate limiting and audit helpers.
+- src/lib/mcp and src/lib/mcp-auth contain tools, transport, pending actions and the delegation boundary.
+- src/lib/db, src/lib/domain and src/services contain schema, database configuration, validation and shared transactional business logic.
+- migrations contains reviewed SQL upgrades and privilege inspection.
+- scripts contains security scans, a read-only database privilege utility and an alert threshold evaluator.
+- .github/workflows/security.yml runs security scans, dependency audit, lint, TypeScript and a secure build.
 
-## Project Structure
+## Local development
 
-```text
-Threadcore/
-├── public/                 # Static assets and icons
-├── scripts/
-│   ├── test-mcp-auth.ts       # Offline authentication/security checks
-│   ├── test-mcp-transport.ts  # Official SDK internal client harness
-│   ├── test-domain-isolated.ts # Disposable local PostgreSQL regression suite
-│   └── inspect-db-privileges.ts # Read-only database metadata inspection
-├── migrations/              # Reviewed SQL; apply to staging before deployment
-├── src/
-│   ├── app/
-│   │   ├── (auth)/         # Login and signup routes
-│   │   ├── (shop)/         # Catalog, product details, cart, checkout, orders, profile
-│   │   ├── actions/        # Next.js Server Actions (auth, cart, order, user)
-│   │   ├── api/            # Route handlers (auth callback)
-│   │   ├── globals.css     # Tailwind v4 configuration
-│   │   └── layout.tsx      # Root layout
-│   ├── components/         # UI components & interactive widgets
-│   ├── lib/
-│   │   ├── db/             # Drizzle client, schema, and seed scripts
-│   │   ├── supabase/       # Supabase server/client/proxy helpers
-│   │   ├── mcp-auth/       # Private server-only delegation/session boundary
-│   │   └── utils.ts        # Formatting & styling utilities
-│   ├── services/           # Domain services (catalog, cart, order, user)
-│   └── proxy.ts            # Root Next.js session refresh proxy
-├── .env.example            # Environment variable template
-├── drizzle.config.ts       # Drizzle configuration
-├── next.config.mjs         # Next.js configuration
-├── package.json            # Dependencies & scripts
-└── tsconfig.json           # TypeScript configuration
-```
+Use Node 22 and npm. Run npm ci, copy .env.example to .env.local and configure the correct isolated database/auth project and exact local origin. Configure the trusted Supabase CA with THREADCORE_DB_CA_PEM when required. Apply reviewed staging migrations according to DEPLOYMENT.md.
 
----
+Run npm run dev. If the local Turbopack CSS worker fails, use npm run dev -- --webpack. The last local preview used port 3032. Enter your own OpenAI key in the assistant.
 
-## Getting Started
+## Verification and cleanup
 
-### 1. Prerequisites
+Run npm run lint, npx tsc --noEmit --incremental false, npm run security:source, npm run security:history and npm run build:secure. For the local webpack workaround run npm run build -- --webpack followed by npm run security:artifacts.
 
-- Node.js 20+ (Node 22 or 26 recommended)
-- npm 10+
-- A Supabase project with PostgreSQL database
+At the user's request, cleanup removed seven test suites, the /mcp-test developer route and component, the disposable local playground, its embedded PostgreSQL dependency, empty demo text and unused temporary schema output. Associated npm commands and CI test calls were removed. Automated regression suites are therefore absent. The scanner's internal self-check remains part of the operational security gate. Earlier suite results are historical evidence only.
 
-### 2. Install Dependencies
+Instruction documents, phase records, reviewed migrations, active UI primitives and operational utilities are retained. Phase documents describe earlier milestones. MCP_PRODUCTION_READINESS.md records current remaining work.
 
-```bash
-npm install
-```
+## Documentation
 
-### 3. Environment Configuration
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env.local
-```
-
-Populate `.env.local` with your Supabase credentials:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-DATABASE_URL=postgresql://postgres.your-project:your-password@aws-0-region.pooler.supabase.com:6543/postgres
-DIRECT_URL=postgresql://postgres.your-project:your-password@aws-0-region.pooler.supabase.com:5432/postgres
-```
-
-### 4. Database Preparation
-
-Apply the reviewed migrations to an isolated staging database before deploying
-the service changes. See [Phase 2](MCP_PHASE2.md) and [Phase 3](MCP_PHASE3.md) for
-privilege checks, migration ordering and required server-only configuration.
-These migrations are not run automatically. Do not seed or migrate production
-without separate authorization.
-
-Populate the demo apparel catalog:
-
-```bash
-npm run db:seed
-```
-
-### 5. Run Development Server
-
-```bash
-npm run dev
-```
-
-Visit https://threadcore-beta.vercel.app/ to view the storefront.
-
----
-
-## Testing & Verification
-
-- **Safe regression suites**:
-  ```bash
-  npm test
-  ```
-  Runs authentication checks offline and domain/concurrency checks in a disposable
-  loopback-only PostgreSQL cluster. Tests do not load `.env.local` or connect to Supabase.
-  The local PostgreSQL development dependency requires its platform installation scripts.
-
-- **Run one suite**:
-  ```bash
-  npm run test:auth
-  npm run test:mcp
-  npm run test:domain
-  ```
-  The superseded database-mutating demo suites were removed after their useful
-  checks were retained in these isolated suites.
-
-- **Production Build**:
-  ```bash
-  npm run build
-  ```
+- [Deployment](DEPLOYMENT.md) covers environment isolation, migration order, hosting and rollback.
+- [Chat](CHAT.md) covers session keys, data flow, tool handoffs and validation.
+- [Security operations](SECURITY_OPERATIONS.md) covers TLS, runtime limits, scans and log setup.
+- [Readiness and remaining work](MCP_PRODUCTION_READINESS.md) distinguishes implementation from live verification and production release.
