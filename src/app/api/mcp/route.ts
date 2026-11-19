@@ -14,6 +14,7 @@ import { ChatHttpError, chatHttpErrorResponse } from "@/lib/chat/http-limits";
 import { auditRequest, auditStage } from "@/lib/chat/audit";
 import { withChatCapacity } from "@/lib/chat/concurrency";
 import { withMcpDeadline } from "@/lib/chat/deadline";
+import type { Permission, Principal } from "@/lib/mcp-auth/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,9 +33,15 @@ async function execute(request: Request, signal: AbortSignal) {
     signal.throwIfAborted();
     auditStage("authentication");
     const auth = privateMcpAuthentication();
+    const authorizations = new Map<Permission, Promise<Principal>>();
     let limited = false;
     return await handleMcp(request, async (permission) => {
-      const principal = await auth.authenticateInvocation(request, permission);
+      let verification = authorizations.get(permission);
+      if (!verification) {
+        verification = auth.authenticateInvocation(request, permission);
+        authorizations.set(permission, verification);
+      }
+      const principal = await verification;
       signal.throwIfAborted();
       if (!limited) {
         await enforceChatRateLimit(`mcp:${principal.userId ?? "anonymous"}`, 180);

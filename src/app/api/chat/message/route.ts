@@ -1,6 +1,6 @@
 import { traceStage, traceMetric } from "@/lib/chat/tracing";
 import { chatBody, runAgent, type ChatEvent } from "@/lib/chat/agent";
-import { withChatTools } from "@/lib/chat/adapter";
+import { withAgentTools } from "@/lib/chat/adapter";
 import { readBoundaryConfig } from "@/lib/mcp-auth/config";
 import { assertTrustedBrowserMutation } from "@/lib/mcp-auth/browser";
 import { authenticationErrorResponse } from "@/lib/mcp-auth/http";
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
             }
             controller.enqueue(bytes);
           };
-          void traceStage("chat.turn", () => withChatTools(request, (client) => runAgent(client, key, parsed.data, signal, emit), 95_000))
+          void traceStage("chat.turn", () => withAgentTools(request, (getClient) => runAgent(getClient, key, parsed.data, signal, emit)))
             .then(() => { auditAgentOutcome(signal.aborted ? "aborted" : "completed"); if (!signal.aborted) emit({ type: "done" }); })
             .catch(() => {
               auditAgentOutcome(signal.aborted ? "aborted" : "unavailable");

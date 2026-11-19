@@ -41,6 +41,7 @@ function projectCartReadForModel(result: DataRecord) {
 
   return {
     status: "ok",
+    currency: "INR",
     cart: {
       items,
       ...(typeof data.subtotalCents === "number" ? { subtotalCents: data.subtotalCents } : {}),
@@ -53,53 +54,65 @@ function projectCartReadForModel(result: DataRecord) {
 export async function withChatTools<T>(request: Request, work: (client: Client) => Promise<T>, milliseconds = 45_000): Promise<T> {
   // One browser action includes SDK initialize, initialized notification and RPC,
   // each with live authentication. Its aggregate budget exceeds one MCP request.
-  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, work, signal)), milliseconds);
+  return withMcpDeadline((signal) => withChatCapacity(() => runChatTools(request, async getClient => work(await getClient()), signal)), milliseconds);
 }
 
-async function runChatTools<T>(request: Request, work: (client: Client) => Promise<T>, signal: AbortSignal): Promise<T> {
-  const authentication = privateMcpAuthentication();
-  const config = readBoundaryConfig();
-  // Establish the current browser context before any transport is opened.
-  auditStage("authentication");
-  const initialDelegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
-  auditStage("rate_limit");
-  await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
-  signal.throwIfAborted();
-  const client = new Client({ name: "threadcore-chat-backend", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(`${config.origin}/api/mcp`), {
-    fetch: async (input, init) => {
-      signal.throwIfAborted();
-      const outbound = new Request(input, init);
-      if (outbound.url !== `${config.origin}/api/mcp`) throw new Error("Unexpected transport target");
-      if (outbound.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
-      const delegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
-      signal.throwIfAborted();
-      // SDK initialization and every call get fresh hidden credentials. Never forward
-      // browser headers wholesale, allow redirects, or place credentials in tool args.
-      const secured = delegation.transportRequest(await outbound.text());
-      // Vercel Preview deployments may require Protection Bypass for Automation
-      // for this same-origin server-to-server call. The secret is server-only and
-      // is attached only in Preview to the already-validated fixed MCP endpoint.
-      const bypassSecret = process.env.VERCEL_ENV === "preview"
-        ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-        : undefined;
-      if (bypassSecret) secured.headers.set("x-vercel-protection-bypass", bypassSecret);
-      const protocol = outbound.headers.get("mcp-protocol-version");
-      if (protocol) secured.headers.set("mcp-protocol-version", protocol);
-      auditStage("transport");
-      return traceStage("mcp.http", () => {
-        if (process.env.VERCEL_ENV === "preview") {
-          const carrier: Record<string, string> = {};
-          propagation.inject(context.active(), carrier);
-          if (carrier.traceparent) secured.headers.set("traceparent", carrier.traceparent);
-          if (carrier.tracestate) secured.headers.set("tracestate", carrier.tracestate);
-        }
-        return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
-      });
-    },
-  });
-  try { await traceStage("mcp.connect", () => client.connect(transport)); signal.throwIfAborted(); return await work(client); }
-  finally { await client.close(); }
+export async function withAgentTools<T>(request: Request, work: (getClient: () => Promise<Client>) => Promise<T>): Promise<T> {
+  return withMcpDeadline(signal => withChatCapacity(() => runChatTools(request, work, signal)), 95_000);
+}
+
+async function runChatTools<T>(request: Request, work: (getClient: () => Promise<Client>) => Promise<T>, signal: AbortSignal): Promise<T> {
+  let connection: Promise<Client> | undefined;
+  let opened: Client | undefined;
+  async function connect() {
+    const authentication = privateMcpAuthentication();
+    const config = readBoundaryConfig();
+    // Establish the current browser context before any transport is opened.
+    auditStage("authentication");
+    const initialDelegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
+    auditStage("rate_limit");
+    await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
+    signal.throwIfAborted();
+    const client = new Client({ name: "threadcore-chat-backend", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(`${config.origin}/api/mcp`), {
+      fetch: async (input, init) => {
+        signal.throwIfAborted();
+        const outbound = new Request(input, init);
+        if (outbound.url !== `${config.origin}/api/mcp`) throw new Error("Unexpected transport target");
+        if (outbound.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
+        const delegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
+        signal.throwIfAborted();
+        // SDK initialization and every call get fresh hidden credentials. Never forward
+        // browser headers wholesale, allow redirects, or place credentials in tool args.
+        const secured = delegation.transportRequest(await outbound.text());
+        // Vercel Preview deployments may require Protection Bypass for Automation
+        // for this same-origin server-to-server call. The secret is server-only and
+        // is attached only in Preview to the already-validated fixed MCP endpoint.
+        const bypassSecret = process.env.VERCEL_ENV === "preview"
+          ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          : undefined;
+        if (bypassSecret) secured.headers.set("x-vercel-protection-bypass", bypassSecret);
+        const protocol = outbound.headers.get("mcp-protocol-version");
+        if (protocol) secured.headers.set("mcp-protocol-version", protocol);
+        auditStage("transport");
+        return traceStage("mcp.http", () => {
+          if (process.env.VERCEL_ENV === "preview") {
+            const carrier: Record<string, string> = {};
+            propagation.inject(context.active(), carrier);
+            if (carrier.traceparent) secured.headers.set("traceparent", carrier.traceparent);
+            if (carrier.tracestate) secured.headers.set("tracestate", carrier.tracestate);
+          }
+          return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
+        });
+      },
+    });
+    opened = client;
+    await traceStage("mcp.connect", () => client.connect(transport));
+    signal.throwIfAborted();
+    return client;
+    }
+  try { return await work(() => connection ??= connect()); }
+  finally { await opened?.close(); }
 }
 
 export function presentToolResult(tool: ToolName, result: Record<string, unknown>) {
@@ -113,7 +126,8 @@ export function presentToolResult(tool: ToolName, result: Record<string, unknown
     // The future model gets no address/order bodies by default. UI rendering is
     // separate from conversation storage; this adapter writes no logs/history.
     modelResult: privateData ? { status: result.isError ? "failed" : "shown_in_private_ui" }
-      : tool === "cart_read" ? projectCartReadForModel(result) : result,
+      : tool === "cart_read" ? projectCartReadForModel(result)
+      : tool === "catalog_read" ? { currency: "INR", result } : result,
     persist: false,
     checkoutPath: "/checkout",
     loginPath: "/login",
