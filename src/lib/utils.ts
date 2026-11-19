@@ -6,5 +6,10 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatPrice(cents: number): string {
-  return `₹${cents.toLocaleString("en-IN")}`;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }

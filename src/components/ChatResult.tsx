@@ -2,11 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight, Check, Package, MapPin, ShoppingBag } from "lucide-react";
 import styles from "./StoreChat.module.css";
+import { formatPrice } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
-export const money = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value / 100) : "";
+export const money = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? formatPrice(value) : "";
 const validId = (value: unknown) => /^[a-f0-9-]{36}$/i.test(text(value));
 
 export function ChatResult({ tool, data, onAction }: { tool: string; data: unknown; onAction?: (tool: string, id: string, address?: Row) => void }) {
