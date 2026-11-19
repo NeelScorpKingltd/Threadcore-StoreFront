@@ -20,6 +20,6 @@ export function McpConfirmationCard({ id, preview, initialStatus = "pending" }: 
     <div className={styles.confirmationTitle}><ShieldCheck size={15} /><span>{preview.operation === "cancel" ? "Cancel order" : preview.operation === "delete" ? "Remove address" : "Add address"}</span></div>
     {preview.operation === "cancel" ? <dl className={styles.confirmationDetails}><div><dt>Order</dt><dd>{String(preview.orderNumber ?? "")}</dd></div><div><dt>Amount</dt><dd>{money(preview.totalAmountCents)}</dd></div><div><dt>Reason</dt><dd>{String(preview.reason ?? "")}</dd></div></dl> : <p className={styles.confirmationAddress}>{addressText}</p>}
     <p className={styles.confirmationStatus} role="status">{status === "pending" ? "Review carefully. This change needs your approval." : status === "working" ? "Saving your decision…" : status === "expired" ? "This proposal expired. Request a new one." : status === "executed" ? "Change completed." : status === "rejected" ? "Declined. Nothing was changed." : "We couldn’t save your decision. You can safely retry."}</p>
-    {actionable && <div className={styles.confirmationButtons}><button onClick={() => submit(true)}><Check size={12} />Confirm change</button><button onClick={() => submit(false)}><X size={12} />Decline</button></div>}
+    {actionable && <div className={styles.confirmationButtons}><button onClick={() => submit(true)}><Check size={12} />Accept</button><button onClick={() => submit(false)}><X size={12} />Decline</button></div>}
   </section>;
 }

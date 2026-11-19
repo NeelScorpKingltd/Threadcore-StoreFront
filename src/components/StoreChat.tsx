@@ -29,6 +29,13 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const generation = useRef(0);
   const identity = useRef(userId);
   const transcript = useRef<HTMLDivElement>(null);
+  const approvalDialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = approvalDialog.current;
+    if (actions.length && dialog && !dialog.open) dialog.showModal();
+    if (!actions.length && dialog?.open) dialog.close();
+  }, [actions]);
 
   useEffect(() => {
     const node = transcript.current;
@@ -107,8 +114,22 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
       const result = await response.json();
       if (generation.current !== current) return;
       if (!response.ok) { setStatus(response.status === 401 ? "Please sign in for private actions." : "Private action unavailable. Please try again later."); return; }
-      if (confirmations) setActions(result.actions ?? []);
-      else { setPrivateResult(result.uiResult ?? result); setStatus(result.uiResult?.isError ? "That action couldn’t be completed. Check the details and try again." : "Your private workspace is up to date. Review any proposed changes below."); }
+      if (confirmations) {
+        setActions((result.actions ?? []).filter((action: Action) => action.status === "pending"));
+        setStatus(result.actions?.some((action: Action) => action.status === "pending") ? "Review your proposed changes." : "No changes are awaiting approval.");
+      } else {
+        setPrivateResult(result.uiResult ?? result);
+        setStatus(result.uiResult?.isError ? "That action couldn’t be completed. Check the details and try again." : "Your private workspace is up to date.");
+        if (privateTool.endsWith("_write") && !result.uiResult?.isError) {
+          const pending = await fetch("/api/chat/confirm", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ operation: "list" }), signal: controller.signal, cache: "no-store",
+          });
+          if (!pending.ok) throw new Error("Approval unavailable");
+          const proposals = await pending.json();
+          if (generation.current === current) setActions((proposals.actions ?? []).filter((action: Action) => action.status === "pending"));
+        }
+      }
     } catch { if (generation.current === current) setStatus("Private action unavailable. Review its current state before retrying."); }
     finally { if (generation.current === current) { setBusy(false); active.current = null; } }
   }
@@ -129,6 +150,10 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   }
 
   return <div className={styles.page}>
+    <dialog ref={approvalDialog} className={styles.approvalDialog} aria-labelledby="approval-title" onCancel={() => setActions([])}>
+      <div className={styles.panelTitle}><h2 id="approval-title">Review your changes</h2><button type="button" className={styles.textButton} aria-label="Close approval popup" onClick={() => setActions([])}><X size={18} /></button></div>
+      {actions.map(action => <McpConfirmationCard key={action.id} id={action.id} preview={action.preview} initialStatus={action.status} />)}
+    </dialog>
     <header className={styles.topline}>
       <div className={styles.brandline}><div className={styles.brandMark}><Sparkles size={20} strokeWidth={1.4} /></div><div><p className={styles.eyebrow}>ThreadCore / Personal assistant</p><p className={styles.subheading}>A little guidance. A better find.</p></div></div>
       <div className={styles.topActions}><span className={styles.pill}><span className={styles.dot} />{signedIn ? "Member session" : "Guest session"}</span><button className={styles.textButton} onClick={endSession}><X size={13} />End session</button></div>
@@ -172,9 +197,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
               <button className={styles.primary} disabled={busy} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
             </div>
             {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
-            <div className={styles.confirmHead}><span>Awaiting your approval</span><button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)} aria-label="Refresh confirmations"><RefreshCw size={11} />Load</button></div>
-            {!actions.length && <p className={styles.confirmEmpty}>Proposed changes appear here for you to review. Nothing happens until you confirm.</p>}
-            {actions.map((action) => <McpConfirmationCard key={action.id + ":" + action.status} id={action.id} preview={action.preview} initialStatus={action.status} />)}
+            <button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)}><RefreshCw size={11} />Review pending changes</button>
           </>}
         </section>
         <section className={styles.privacyCard}><ShieldCheck size={22} strokeWidth={1.2} /><h3>Designed around your privacy.</h3><p>You’re in control. Your key stays in this session, and sensitive changes always wait for your approval.</p><span><CircleCheck size={11} />No saved keys or chat history</span></section>
