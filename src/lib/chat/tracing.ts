@@ -1,5 +1,13 @@
 import "server-only";
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
+import type { ToolDiagnostic } from "./tool-diagnostics";
+
+export function traceToolFailure(diagnostic: ToolDiagnostic) {
+  if (process.env.VERCEL_ENV !== "preview") return;
+  const span = trace.getActiveSpan();
+  span?.setStatus({ code: SpanStatusCode.ERROR });
+  span?.setAttributes({ "tool.error.category": diagnostic.category, "tool.error.fields": diagnostic.fields });
+}
 
 // Callers supply fixed stage names and allowlisted scalar metadata only.
 // Never record arguments, SQL, payloads, identities or exception messages.

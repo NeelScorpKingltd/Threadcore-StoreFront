@@ -1,4 +1,6 @@
 import { traceStage, traceMetric } from "@/lib/chat/tracing";
+import { traceToolFailure } from "./tracing";
+import { toolDiagnostic } from "./tool-diagnostics";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -101,8 +103,19 @@ export async function runAgent(client: Client, key: string, body: z.infer<typeof
     const args = wrapper.arguments;
     if (selected.name === "cart_write") args.requestId = cartIntentId(body.turnId, args);
     signal.throwIfAborted();
-    const result = presentToolResult(selected.name, await traceStage("mcp.call_tool", () => client.callTool({ name: selected.name, arguments: args }), { "mcp.tool": selected.name }));
-    auditToolOutcome(selected.name, result.kind !== "tool_result");
+    const result = await traceStage("mcp.call_tool", async () => {
+      try {
+        const raw = await client.callTool({ name: selected.name, arguments: args });
+        const diagnostic = toolDiagnostic(raw);
+        if (diagnostic) traceToolFailure(diagnostic);
+        const presented = presentToolResult(selected.name, raw);
+        auditToolOutcome(selected.name, presented.kind !== "tool_result", step + 1, diagnostic);
+        return presented;
+      } catch (error) {
+        auditToolOutcome(selected.name, true, step + 1, { category: "transport", fields: [] });
+        throw error;
+      }
+    }, { "mcp.tool": selected.name, "tool.attempt": step + 1 });
     if (selected.name === "profile_read" || selected.name.startsWith("addresses_") || selected.name.startsWith("orders_")) {
       emit({ type: "private", tool: selected.name, data: result.uiResult });
     } else emit({ type: "result", tool: selected.name, data: result.uiResult });

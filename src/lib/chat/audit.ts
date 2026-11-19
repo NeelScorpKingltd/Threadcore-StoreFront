@@ -1,4 +1,5 @@
 import { traceStage } from "./tracing";
+import type { ToolDiagnostic } from "./tool-diagnostics";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -34,8 +35,9 @@ export async function auditRequest(route: "tools" | "confirm" | "mcp" | "message
   });
 }
 
-export function auditToolOutcome(tool: "catalog_read" | "cart_read" | "cart_write" | "profile_read" | "addresses_read" | "addresses_write" | "orders_read" | "orders_write", failed: boolean) {
-  try { console.info(JSON.stringify({ event: "chat_tool", requestId: context.getStore()?.requestId, tool, outcome: failed ? "failed" : "completed" })); }
+export function auditToolOutcome(tool: "catalog_read" | "cart_read" | "cart_write" | "profile_read" | "addresses_read" | "addresses_write" | "orders_read" | "orders_write", failed: boolean, attempt?: number, diagnostic?: ToolDiagnostic) {
+  try { console.info(JSON.stringify({ event: "chat_tool", requestId: context.getStore()?.requestId, tool, outcome: failed ? "failed" : "completed",
+    ...(process.env.VERCEL_ENV === "preview" ? { attempt, errorCategory: diagnostic?.category, schemaFields: diagnostic?.fields } : {}) })); }
   catch { /* Never retry a mutation because logging failed. */ }
 }
 
