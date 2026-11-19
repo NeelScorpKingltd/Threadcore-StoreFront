@@ -108,7 +108,7 @@ export async function runAgent(getClient: () => Promise<Client>, key: string, bo
     emit({ type: "activity", tool: tool });
     if (tool === "addresses_write" || tool === "orders_write") {
       emit({ type: "private", tool: tool });
-      emit({ type: "text", text: "Please use the private action form. Review the saved proposal and confirm it separately." });
+      emit({ type: "text", text: "Use the private form in this conversation to add, edit or remove an address, or cancel an order. Review the popup and accept or decline the proposed change." });
       return;
     }
     const wrapper = z.object({ arguments: z.record(z.string(), z.unknown()) }).strict().parse(JSON.parse(selected.arguments));

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { McpConfirmationCard } from "./McpConfirmationCard";
@@ -13,6 +14,7 @@ type PrivateTool = "profile_read" | "addresses_read" | "orders_read" | "addresse
 const toolLabels: Record<string, string> = { catalog_read: "Finding your next favourite", cart_read: "Taking a look at your cart", cart_write: "Updating your selection", profile_read: "Opening your profile", addresses_read: "Opening saved addresses", addresses_write: "Preparing a private address form", orders_read: "Finding your orders", orders_write: "Preparing a cancellation request" };
 
 export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | null; stagingKeyAvailable: boolean }) {
+  const router = useRouter();
   const [key, setKey] = useState("");
   const [keyOpen, setKeyOpen] = useState(!stagingKeyAvailable);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -24,6 +26,9 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const [operation, setOperation] = useState("add");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [privateResult, setPrivateResult] = useState<unknown>();
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspace = useRef<HTMLElement>(null);
+  useEffect(() => { if (workspaceOpen) workspace.current?.scrollIntoView({ block: "nearest" }); }, [workspaceOpen, privateTool]);
   const [actions, setActions] = useState<Action[]>([]);
   const active = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -45,7 +50,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   function endSession() {
     generation.current++; active.current?.abort(); active.current = null;
     setKey(""); setMessages([]); setText(""); setPrivateResult(undefined); setActions([]); setFields({}); setBusy(false); setStatus("");
-    setKeyOpen(true);
+    setKeyOpen(true); setWorkspaceOpen(false);
   }
   useEffect(() => {
     const { data: { subscription } } = createClient().auth.onAuthStateChange((_event, session) => {
@@ -66,6 +71,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
     setMessages([...messages, { role: "user", content: text.trim() }, { role: "assistant", content: "" }].slice(-20) as Message[]); setText(""); setBusy(true); setStatus("Getting ready to help…");
     const controller = new AbortController(); active.current = controller;
     let complete = false;
+    let refreshCart = false;
     try {
       const response = await fetch("/api/chat/message", {
         method: "POST", headers: { "content-type": "application/json", ...(key ? { "x-openai-key": key } : {}) },
@@ -83,9 +89,12 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
             if (!line || generation.current !== current) continue;
             const item = JSON.parse(line);
             if (item.type === "text") setMessages((previous) => previous.map((message, index) => index === previous.length - 1 ? { ...message, content: message.content + item.text } : message));
-            if (item.type === "activity") setStatus(`${toolLabels[item.tool] || "Working on your request"}…`);
+            if (item.type === "activity") {
+              setStatus(`${toolLabels[item.tool] || "Working on your request"}…`);
+              if (item.tool === "cart_write" || item.tool === "cart_read") refreshCart = true;
+            }
             if (item.type === "result") setMessages((previous) => previous.map((message, index) => index === previous.length - 1 ? { ...message, results: [...(message.results ?? []), { tool: item.tool, data: item.data }] } : message));
-            if (item.type === "private") { setPrivateTool(item.tool); setPrivateResult(item.data); setStatus("See the private action panel."); }
+            if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); setStatus("Use the private form in this conversation."); }
             if (item.type === "error") throw new Error(item.message);
             if (item.type === "done") complete = true;
           }
@@ -95,7 +104,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
       else if (generation.current === current) setStatus("Ready");
     } catch (error) {
       if (generation.current === current) setStatus(controller.signal.aborted ? "Stopped. A requested change may have completed; check your cart." : error instanceof Error ? error.message : "I'm unable to help right now.");
-    } finally { if (generation.current === current) { setBusy(false); active.current = null; } }
+    } finally { if (generation.current === current) { setBusy(false); active.current = null; if (refreshCart) router.refresh(); } }
   }
 
   async function privateRequest(confirmations = false) {
@@ -106,7 +115,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
       let args: Record<string, unknown> = {};
       if (privateTool === "orders_read") args = { operation: fields.orderId ? "details" : "list", ...(fields.orderId ? { orderId: fields.orderId } : { limit: 10, offset: 0 }) };
       if (privateTool === "orders_write") args = { operation: "cancel", orderId: fields.orderId, reason: fields.reason };
-      if (privateTool === "addresses_write") args = operation === "delete" ? { operation, addressId: fields.addressId } : { operation: "add", street: fields.street, city: fields.city, state: fields.state, postalCode: fields.postalCode, country: fields.country || "India", isDefault: false };
+      if (privateTool === "addresses_write") args = operation === "delete" ? { operation, addressId: fields.addressId } : { operation, ...(operation === "edit" ? { addressId: fields.addressId } : {}), street: fields.street, city: fields.city, state: fields.state, postalCode: fields.postalCode, country: fields.country || "India", isDefault: fields.isDefault === "true" };
       const response = await fetch(confirmations ? "/api/chat/confirm" : "/api/chat/tools", {
         method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal, cache: "no-store",
         body: JSON.stringify(confirmations ? { operation: "list" } : { operation: "call", tool: privateTool, arguments: args }),
@@ -134,13 +143,18 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
     finally { if (generation.current === current) { setBusy(false); active.current = null; } }
   }
 
-  const names = privateTool === "addresses_write" ? operation === "delete" ? ["addressId"] : ["street", "city", "state", "postalCode", "country"]
+  const names = privateTool === "addresses_write" ? operation === "delete" ? ["addressId"] : [...(operation === "edit" ? ["addressId"] : []), "street", "city", "state", "postalCode", "country"]
     : privateTool === "orders_write" ? ["orderId", "reason"] : privateTool === "orders_read" ? ["orderId"] : [];
 
   const section = privateTool.startsWith("addresses") ? "addresses" : privateTool.startsWith("orders") ? "orders" : "profile";
   const connected = Boolean(key || stagingKeyAvailable);
   const labels: Record<string, string> = { addressId: "Address reference", street: "Street address", city: "City", state: "State / region", postalCode: "Postal code", country: "Country", orderId: "Order reference", reason: "Reason for cancellation" };
-  function chooseAction(tool: string, id: string) {
+  function chooseAction(tool: string, id: string, saved?: Record<string, unknown>) {
+    if (tool === "addresses_edit" && saved) {
+      setPrivateTool("addresses_write"); setOperation("edit");
+      setFields({ addressId: id, ...Object.fromEntries(["street", "city", "state", "postalCode", "country"].map(key => [key, typeof saved[key] === "string" ? saved[key] : ""])), isDefault: String(saved.isDefault === true) });
+      setPrivateResult(undefined); return;
+    }
     setPrivateTool(tool as PrivateTool); setFields(tool === "addresses_write" ? { addressId: id } : { orderId: id });
     setOperation("delete"); setPrivateResult(undefined);
   }
@@ -152,7 +166,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   return <div className={styles.page}>
     <dialog ref={approvalDialog} className={styles.approvalDialog} aria-labelledby="approval-title" onCancel={() => setActions([])}>
       <div className={styles.panelTitle}><h2 id="approval-title">Review your changes</h2><button type="button" className={styles.textButton} aria-label="Close approval popup" onClick={() => setActions([])}><X size={18} /></button></div>
-      {actions.map(action => <McpConfirmationCard key={action.id} id={action.id} preview={action.preview} initialStatus={action.status} />)}
+      {actions.map(action => <McpConfirmationCard key={action.id} id={action.id} preview={action.preview} initialStatus={action.status} onDecision={() => { setPrivateResult(undefined); setFields({}); router.refresh(); }} />)}
     </dialog>
     <header className={styles.topline}>
       <div className={styles.brandline}><div className={styles.brandMark}><Sparkles size={20} strokeWidth={1.4} /></div><div><p className={styles.eyebrow}>ThreadCore / Personal assistant</p><p className={styles.subheading}>A little guidance. A better find.</p></div></div>
@@ -178,6 +192,23 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
             {message.content ? <p className={styles.messageText}>{message.content}</p> : busy && index === messages.length - 1 ? <div className={styles.typing} aria-label="Assistant is working"><span /><span /><span /></div> : <p className={styles.resultNote}>This reply ended before any text was received.</p>}
             {message.results?.map((result, resultIndex) => <ChatResult key={resultIndex} tool={result.tool} data={result.data} />)}
           </article>)}
+        <section ref={workspace} className={styles.privatePanel}>
+          <details open={workspaceOpen} onToggle={event => setWorkspaceOpen(event.currentTarget.open)}><summary className={styles.fieldLabel}>Private account actions</summary>
+          <div className={styles.panelTitle}><h2>Your workspace</h2><LockKeyhole size={15} strokeWidth={1.4} /></div><p className={styles.panelCopy}>Personal details belong here. Your profile, addresses and orders stay out of the model’s context.</p>
+          <div className={styles.tabs} role="group" aria-label="Account sections">{["profile", "addresses", "orders"].map((name) => <button key={name} className={styles.tab + (section === name ? " " + styles.activeTab : "")} disabled={busy} onClick={() => chooseSection(name)}>{name[0].toUpperCase() + name.slice(1)}</button>)}</div>
+          {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
+            <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}{section === "orders" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("orders_write"); setFields({}); setPrivateResult(undefined); }}>Cancel an order</button>}</div>
+            <div className={styles.form}>
+              {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => setOperation(event.target.value)}><option value="add">Add a new address</option><option value="edit">Edit a saved address</option><option value="delete">Remove a saved address</option></select></>}
+              {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
+              {privateTool === "addresses_write" && operation !== "delete" && <label><input type="checkbox" checked={fields.isDefault === "true"} disabled={busy} onChange={event => setFields({ ...fields, isDefault: String(event.target.checked) })} /> Use as default address</label>}
+              <button className={styles.primary} disabled={busy} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
+            </div>
+            {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
+            <button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)}><RefreshCw size={11} />Review pending changes</button>
+          </>}
+          </details>
+        </section>
         </div>
         <div className={styles.composerArea}>
           {status && <p role="status" className={styles.status}>{status}</p>}
@@ -186,20 +217,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
         </div>
       </section>
       <aside className={styles.sidebar} aria-label="Private account actions">
-        <section className={styles.privatePanel}>
-          <div className={styles.panelTitle}><h2>Your workspace</h2><LockKeyhole size={15} strokeWidth={1.4} /></div><p className={styles.panelCopy}>Personal details belong here. Your profile, addresses and orders stay out of the model’s context.</p>
-          <div className={styles.tabs} role="group" aria-label="Account sections">{["profile", "addresses", "orders"].map((name) => <button key={name} className={styles.tab + (section === name ? " " + styles.activeTab : "")} disabled={busy} onClick={() => chooseSection(name)}>{name[0].toUpperCase() + name.slice(1)}</button>)}</div>
-          {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
-            <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}{section === "orders" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("orders_write"); setFields({}); setPrivateResult(undefined); }}>Cancel an order</button>}</div>
-            <div className={styles.form}>
-              {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => setOperation(event.target.value)}><option value="add">Add a new address</option><option value="delete">Remove a saved address</option></select></>}
-              {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
-              <button className={styles.primary} disabled={busy} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
-            </div>
-            {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
-            <button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)}><RefreshCw size={11} />Review pending changes</button>
-          </>}
-        </section>
+
         <section className={styles.privacyCard}><ShieldCheck size={22} strokeWidth={1.2} /><h3>Designed around your privacy.</h3><p>You’re in control. Your key stays in this session, and sensitive changes always wait for your approval.</p><span><CircleCheck size={11} />No saved keys or chat history</span></section>
         <div className={styles.sidebarFooter}><span>Curated by ThreadCore.</span><Link href="/checkout">Go to checkout <ArrowUpRight size={11} /></Link></div>
       </aside>

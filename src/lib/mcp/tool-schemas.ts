@@ -18,6 +18,7 @@ export const toolSchemas = {
   profile_read: z.object({}).strict(),
   addresses_read: z.object({}).strict(),
   addresses_write: z.discriminatedUnion("operation", [
+    z.object({ operation: z.literal("edit"), addressId: id, street: field(300), city: field(100), state: field(100), postalCode: field(20), country: field(100).default("India"), isDefault: z.boolean().default(false) }).strict(),
     z.object({ operation: z.literal("add"), street: field(300), city: field(100), state: field(100), postalCode: field(20), country: field(100).default("India"), isDefault: z.boolean().default(false) }).strict(),
     z.object({ operation: z.literal("delete"), addressId: id }).strict(),
   ]),

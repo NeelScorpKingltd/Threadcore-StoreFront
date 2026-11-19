@@ -39,3 +39,16 @@ export async function deleteAddress(userId: string, addressId: string, requestId
     return { success: true };
   });
 }
+
+export async function editAddress(userId: string, addressId: string, data: AddressInput, requestId: string) {
+  userId = customerId(userId);
+  addressId = uuid(addressId, "address ID");
+  const value = address(data);
+  return once(userId, "address.edit", requestId, [addressId, ...Object.values(value)], async (tx) => {
+    const [saved] = await tx.select(fields).from(addresses).where(and(eq(addresses.id, addressId), eq(addresses.userId, userId)));
+    if (!saved) throw new DomainError("Address not found");
+    if (value.isDefault) await tx.update(addresses).set({ isDefault: false }).where(and(eq(addresses.userId, userId), eq(addresses.isDefault, true)));
+    const [result] = await tx.update(addresses).set(value).where(and(eq(addresses.id, addressId), eq(addresses.userId, userId))).returning(fields);
+    return result;
+  });
+}

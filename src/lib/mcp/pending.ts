@@ -2,20 +2,27 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { address, customerId, text, uuid } from "@/lib/domain/validation";
 import { DomainError } from "@/lib/domain/errors";
-import { customerTransaction, readTransaction } from "@/lib/domain/mutation";
+import { customerTransaction, readTransaction, fingerprint } from "@/lib/domain/mutation";
 import * as addresses from "@/services/user.service";
 import * as orders from "@/services/order.service";
 
 type Action = { operation: "add"; street: string; city: string; state: string; postalCode: string; country?: string; isDefault?: boolean }
+  | { operation: "edit"; addressId: string; street: string; city: string; state: string; postalCode: string; country?: string; isDefault?: boolean; before?: string }
   | { operation: "delete"; addressId: string }
   | { operation: "cancel"; orderId: string; reason: string };
 
 export async function propose(user: string, input: Action) {
   user = customerId(user);
-  const action: Action = input.operation === "add" ? { operation: "add", ...address(input) } : input.operation === "delete"
+  const action: Action = input.operation === "edit" ? { operation: "edit", addressId: uuid(input.addressId), ...address(input) } : input.operation === "add" ? { operation: "add", ...address(input) } : input.operation === "delete"
     ? { operation: "delete", addressId: uuid(input.addressId) }
     : { operation: "cancel", orderId: uuid(input.orderId), reason: text(input.reason, "reason", 500) };
   let preview: Record<string, unknown> = { ...action };
+  if (action.operation === "edit") {
+    const saved = (await addresses.getAddresses(user)).find(a => a.id === action.addressId);
+    if (!saved) throw new DomainError("Address not found");
+    action.before = fingerprint([saved]);
+    preview = { operation: "edit", before: saved, address: address(action) };
+  }
   if (action.operation === "delete") {
     const saved = (await addresses.getAddresses(user)).find((a) => a.id === action.addressId);
     if (!saved) throw new DomainError("Address not found");
@@ -60,7 +67,12 @@ export async function decide(user: string, id: string, confirm: boolean) {
     // Domain mutation, its retry receipt, and proposal consumption share ONE transaction.
     // AsyncLocalStorage propagates this transaction only within the same customer.
     const action = row.action;
-    if (action.operation === "add") await addresses.addAddress(user, action, id);
+    if (action.operation === "edit") {
+      const saved = (await addresses.getAddresses(user)).find(a => a.id === action.addressId);
+      if (!saved || fingerprint([saved]) !== action.before) throw new DomainError("Address changed. Request a new proposal.");
+      await addresses.editAddress(user, action.addressId, action, id);
+    }
+    else if (action.operation === "add") await addresses.addAddress(user, action, id);
     else if (action.operation === "delete") {
       if (!(await addresses.getAddresses(user)).some((a) => a.id === action.addressId)) throw new DomainError("Address no longer exists");
       await addresses.deleteAddress(user, action.addressId, id);

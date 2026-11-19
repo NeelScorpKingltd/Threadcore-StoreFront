@@ -9,7 +9,7 @@ const text = (value: unknown) => typeof value === "string" ? value : "";
 export const money = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value / 100) : "";
 const validId = (value: unknown) => /^[a-f0-9-]{36}$/i.test(text(value));
 
-export function ChatResult({ tool, data, onAction }: { tool: string; data: unknown; onAction?: (tool: string, id: string) => void }) {
+export function ChatResult({ tool, data, onAction }: { tool: string; data: unknown; onAction?: (tool: string, id: string, address?: Row) => void }) {
   const envelope = row(data);
   const structured = row(envelope.structuredContent);
   const value = "data" in structured ? structured.data : data;
@@ -37,7 +37,7 @@ export function ChatResult({ tool, data, onAction }: { tool: string; data: unkno
   if (tool === "profile_read") return <div className={styles.summaryCard}><span className={styles.eyebrow}>Your profile</span><h3>{text(record.displayName) || "Welcome to ThreadCore"}</h3><p className={styles.resultNote}>Only visible in your private workspace.</p></div>;
   if (tool === "addresses_read") {
     const addresses = Array.isArray(value) ? value.map(row) : [];
-    return <div className={styles.privateList}>{addresses.length ? addresses.map((address, index) => <article className={styles.summaryCard} key={text(address.id) || index}><div className={styles.summaryHeading}><MapPin size={16} /><strong>{address.isDefault ? "Default address" : "Saved address"}</strong></div><p>{[address.street, address.city, address.state, address.postalCode, address.country].map(text).filter(Boolean).join(", ")}</p>{validId(address.id) && onAction && <button className={styles.textButton} onClick={() => onAction("addresses_write", text(address.id))}>Request removal <ArrowUpRight size={13} /></button>}</article>) : <p className={styles.resultNote}>No saved addresses yet.</p>}</div>;
+    return <div className={styles.privateList}>{addresses.length ? addresses.map((address, index) => <article className={styles.summaryCard} key={text(address.id) || index}><div className={styles.summaryHeading}><MapPin size={16} /><strong>{address.isDefault ? "Default address" : "Saved address"}</strong></div><p>{[address.street, address.city, address.state, address.postalCode, address.country].map(text).filter(Boolean).join(", ")}</p>{validId(address.id) && onAction && <button className={styles.textButton} onClick={() => onAction("addresses_edit", text(address.id), address)}>Edit address <ArrowUpRight size={13} /></button>}{validId(address.id) && onAction && <button className={styles.textButton} onClick={() => onAction("addresses_write", text(address.id))}>Request removal <ArrowUpRight size={13} /></button>}</article>) : <p className={styles.resultNote}>No saved addresses yet.</p>}</div>;
   }
   if (tool === "orders_read") {
     const orders = (Array.isArray(value) ? value : value ? [value] : []).map(row);
