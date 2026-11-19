@@ -1,3 +1,4 @@
+import { traceStage } from "./tracing";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -17,7 +18,7 @@ export async function auditRequest(route: "tools" | "confirm" | "mcp" | "message
   return context.run(state, async () => {
     let status = 500;
     try {
-      const response = await work();
+      const response = await traceStage("chat." + route, work);
       status = response.status;
       response.headers.set("x-threadcore-request-id", requestId);
       return response;

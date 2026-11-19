@@ -1,3 +1,4 @@
+import { traceStage } from "@/lib/chat/tracing";
 import { DomainError } from "@/lib/domain/errors";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -12,11 +13,11 @@ const activeTransaction = new AsyncLocalStorage<{ userId: string; tx: Transactio
 export async function readTransaction<T>(work: (tx: Transaction) => Promise<T>) {
   const current = activeTransaction.getStore();
   if (current) return work(current.tx);
-  return db.transaction(async (tx) => {
+  return traceStage("db.transaction", () => db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
     await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
     return work(tx);
-  });
+  }));
 }
 
 // Transaction locks work with transaction pooling. All customer writes acquire
@@ -32,13 +33,13 @@ export async function customerTransaction<T>(userId: string, work: (tx: Transact
     if (current.userId !== userId) throw new DomainError("Transaction identity mismatch");
     return work(current.tx);
   }
-  return db.transaction(async (tx) => {
+  return traceStage("db.customer_transaction", () => db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
     await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
     await tx.execute(sql`SET LOCAL idle_in_transaction_session_timeout = '15s'`);
     await lockCustomer(tx, userId);
     return activeTransaction.run({ userId, tx }, () => work(tx));
-  });
+  }));
 }
 
 export function fingerprint(args: readonly unknown[]) {

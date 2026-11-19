@@ -1,4 +1,5 @@
 import "server-only";
+import { traceStage } from "@/lib/chat/tracing";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Permission, Principal } from "@/lib/mcp-auth/types";
@@ -24,9 +25,9 @@ export function createMcpServer(authorize: Authorize, services: Services) {
   });
   async function run(permission: Permission, work: (userId: string) => Promise<unknown>) {
     try {
-      const principal = await authorize(permission);
+      const principal = await traceStage("mcp.authorize", () => authorize(permission), { "mcp.permission": permission });
       if (permission !== "catalog:read" && principal.kind !== "customer") throw new McpAuthError(401, "LOGIN_REQUIRED");
-      const data = await work(principal.userId ?? "");
+      const data = await traceStage("mcp.execute", () => work(principal.userId ?? ""), { "mcp.permission": permission });
       const result = { data, checkoutPath: "/checkout", storedTextIsUntrusted: true };
       const serialized = JSON.stringify(result);
       if (Buffer.byteLength(serialized) > 128 * 1024) throw new Error("Result too large");

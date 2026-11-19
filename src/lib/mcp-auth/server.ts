@@ -1,3 +1,4 @@
+import { traceStage } from "@/lib/chat/tracing";
 import "server-only";
 import { createClient as createAuthClient } from "@supabase/supabase-js";
 import { sql } from "drizzle-orm";
@@ -27,7 +28,7 @@ export function privateMcpAuthentication() {
       const supabase = createAuthClient(getSupabaseUrl(), getSupabaseAnonKey(), {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       });
-      const { data, error } = await supabase.auth.getUser(token);
+      const { data, error } = await traceStage("auth.supabase_get_user", () => supabase.auth.getUser(token));
       if (error) {
         if (error.status && [400, 401, 403, 422].includes(error.status)) return null;
         throw new Error("Authentication unavailable");
@@ -36,13 +37,13 @@ export function privateMcpAuthentication() {
     },
     async sessionIsActive(userId, sessionId) {
       auditStage("session_database");
-      return db.transaction(async (tx) => {
+      return traceStage("db.session_check", () => db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
       const [row] = await tx.execute<{ active: boolean }>(sql`
         select public.threadcore_session_is_active(${userId}::uuid, ${sessionId}::uuid) as active
       `);
       return row?.active === true;
-      });
+      }));
     },
   });
 }

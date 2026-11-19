@@ -39,3 +39,14 @@ The chat now uses a responsive editorial layout with prompt suggestions, a colla
 
 ## Current popup behavior
 The confirmation popup is rendered using a native modal dialog. Private action forms automatically load pending proposals after creating a change. Accept and Decline send only the proposal ID and decision to the existing authenticated endpoint. Closing the popup leaves the decision pending. Resolved cards stay visible until the popup closes. The workspace holds private forms and read results, while approvals appear in the popup.
+
+## Staging performance tracing
+Preview Node.js functions register @vercel/otel through src/instrumentation.ts. Custom spans are enabled only for VERCEL_ENV=preview. Automatic fetch instrumentation and header-derived attributes are disabled. Explicit spans record fixed stage names, tool/permission/model names, LLM round numbers, numeric token counts and first-text durations. Exception contents, SQL, prompts, responses, credentials and private data are excluded from custom telemetry.
+
+Stages include chat.turn (stream lifetime), chat.message/tools/confirm/mcp (handler work), mcp.connect, mcp.discover_tools, mcp.call_tool, mcp.http, auth.delegate, auth.supabase_get_user, db.session_check, db.rate_limit, db.transaction, db.customer_transaction, mcp.authorize and mcp.execute. Database transaction durations include connection acquisition and transaction setup/commit. The mcp.http span ends at response headers, while its parent connect/discovery/tool span includes SDK response consumption. LLM spans include the full provider stream and report input/output tokens and llm.first_text_ms when text exists. chat.first_text_ms measures from stream setup and is attached to the active span that produces the first text. A tool-only model round may have no first-text metric.
+
+Trace context is injected only into the fixed same-origin MCP endpoint, linking internal functions. Vercel controls collection/sampling and platform metadata. An instrumentation file takes over SDK registration, so production has no application-registered tracing SDK in this configuration.
+
+After Preview deployment, open the stable staging origin while signed in to Vercel, start a Toolbar tracing session, send a catalogue request, and use View Session Traces. Inspect /api/chat/message and expand the child spans. Compare mcp.connect/discover/auth/database durations with llm.response rounds and first-text metrics. Repeat once warm, then stop the session. Session tracing uses its plan allowance. No always-on paid tracing configuration or third-party exporter is enabled by this code.
+
+The previous observed staging message requests took 47.54s and 39.64s. Those totals do not establish which stage is slow. Capture new detailed traces before changing authentication, connection handling or model settings. Product-card filtering and INR response corrections are separate pending fixes.

@@ -1,3 +1,4 @@
+import { traceStage, traceMetric } from "@/lib/chat/tracing";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -32,6 +33,8 @@ function withoutRequestId(value: unknown): unknown {
 
 // Stream text only; never expose reasoning, raw provider errors or function arguments.
 export async function modelResponse(key: string, body: unknown, signal: AbortSignal, emit: (event: ChatEvent) => void, send: typeof fetch = fetch): Promise<Record<string, unknown>[]> {
+  const started = performance.now();
+  let firstText = false;
   const response = await send("https://api.openai.com/v1/responses", {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify(body), signal, cache: "no-store", redirect: "error",
@@ -50,8 +53,16 @@ export async function modelResponse(key: string, body: unknown, signal: AbortSig
         const line = pending.slice(0, newline).trim(); pending = pending.slice(newline + 1);
         if (!line.startsWith("data:") || line === "data: [DONE]") continue;
         const event = JSON.parse(line.slice(5));
-        if (event.type === "response.output_text.delta" && typeof event.delta === "string") emit({ type: "text", text: event.delta });
-        if (event.type === "response.completed" && Array.isArray(event.response?.output)) output = event.response.output;
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          if (!firstText) { traceMetric("llm.first_text_ms", performance.now() - started); firstText = true; }
+          emit({ type: "text", text: event.delta });
+        }
+        if (event.type === "response.completed" && Array.isArray(event.response?.output)) {
+          output = event.response.output;
+          const usage = event.response.usage;
+          if (typeof usage?.input_tokens === "number") traceMetric("gen_ai.usage.input_tokens", usage.input_tokens);
+          if (typeof usage?.output_tokens === "number") traceMetric("gen_ai.usage.output_tokens", usage.output_tokens);
+        }
         if (["error", "response.failed", "response.incomplete"].includes(event.type)) throw new Error("MODEL_UNAVAILABLE");
       }
     }
@@ -61,7 +72,7 @@ export async function modelResponse(key: string, body: unknown, signal: AbortSig
 }
 
 export async function runAgent(client: Client, key: string, body: z.infer<typeof chatBody>, signal: AbortSignal, emit: (event: ChatEvent) => void, respond = modelResponse) {
-  const discovered = (await client.listTools()).tools.filter((tool) => TOOL_NAMES.includes(tool.name as ToolName));
+  const discovered = (await traceStage("mcp.discover_tools", () => client.listTools())).tools.filter((tool) => TOOL_NAMES.includes(tool.name as ToolName));
   const tools = discovered.map((tool) => ({ type: "function", name: tool.name,
     description: tool.name.endsWith("_write") && tool.name !== "cart_write" ? "Open a private form for this action; user enters details and confirms there." : tool.description,
     strict: false, parameters: { type: "object", properties: {
@@ -70,12 +81,12 @@ export async function runAgent(client: Client, key: string, body: z.infer<typeof
   const input: unknown[] = [...body.messages];
   for (let step = 0; step < 4; step++) {
     signal.throwIfAborted();
-    const output = await respond(key, {
+    const output = await traceStage("llm.response", () => respond(key, {
       model: process.env.THREADCORE_OPENAI_MODEL || "gpt-5.4-mini", instructions,
       input, tools, store: false, stream: true, parallel_tool_calls: false,
       max_output_tokens: 1200, reasoning: { effort: "low" }, include: ["reasoning.encrypted_content"],
       tool_choice: step === 3 ? "none" : "auto",
-    }, signal, emit);
+    }, signal, emit), { "llm.round": step + 1, "gen_ai.request.model": process.env.THREADCORE_OPENAI_MODEL || "gpt-5.4-mini" });
     const calls = output.filter((item) => item.type === "function_call");
     if (!calls.length) return;
     if (calls.length > 1 || step === 3) throw new Error("TOOL_LIMIT");
@@ -90,7 +101,7 @@ export async function runAgent(client: Client, key: string, body: z.infer<typeof
     const args = wrapper.arguments;
     if (selected.name === "cart_write") args.requestId = cartIntentId(body.turnId, args);
     signal.throwIfAborted();
-    const result = presentToolResult(selected.name, await client.callTool({ name: selected.name, arguments: args }));
+    const result = presentToolResult(selected.name, await traceStage("mcp.call_tool", () => client.callTool({ name: selected.name, arguments: args }), { "mcp.tool": selected.name }));
     auditToolOutcome(selected.name, result.kind !== "tool_result");
     if (selected.name === "profile_read" || selected.name.startsWith("addresses_") || selected.name.startsWith("orders_")) {
       emit({ type: "private", tool: selected.name, data: result.uiResult });

@@ -1,3 +1,4 @@
+import { traceStage } from "./tracing";
 import "server-only";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -9,7 +10,7 @@ import { ChatHttpError } from "./http-limits";
 export async function enforceChatRateLimit(subject: string, limit: number) {
   const key = createHash("sha256").update(subject).digest("hex");
   try {
-    const [row] = await db.transaction(async (tx) => {
+    const [row] = await traceStage("db.rate_limit", () => db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
       await tx.execute(sql`SET LOCAL lock_timeout = '1s'`);
       return tx.execute<{ allowed: boolean }>(sql`
@@ -21,7 +22,7 @@ export async function enforceChatRateLimit(subject: string, limit: number) {
           then 1 else least(counters.hits, ${limit}) + 1 end
       returning hits <= ${limit} as allowed
     `);
-    });
+    }));
     if (!row?.allowed) throw new ChatHttpError(429, "RATE_LIMITED");
   } catch (error) {
     if (error instanceof ChatHttpError) throw error;

@@ -1,3 +1,5 @@
+import { traceStage } from "./tracing";
+import { context, propagation } from "@opentelemetry/api";
 import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -59,7 +61,7 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
   const config = readBoundaryConfig();
   // Establish the current browser context before any transport is opened.
   auditStage("authentication");
-  const initialDelegation = await authentication.delegateFromBrowser(request);
+  const initialDelegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
   auditStage("rate_limit");
   await enforceChatRateLimit(`tools:${initialDelegation.rateLimitSubject()}`, 60);
   signal.throwIfAborted();
@@ -70,7 +72,7 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
       const outbound = new Request(input, init);
       if (outbound.url !== `${config.origin}/api/mcp`) throw new Error("Unexpected transport target");
       if (outbound.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
-      const delegation = await authentication.delegateFromBrowser(request);
+      const delegation = await traceStage("auth.delegate", () => authentication.delegateFromBrowser(request));
       signal.throwIfAborted();
       // SDK initialization and every call get fresh hidden credentials. Never forward
       // browser headers wholesale, allow redirects, or place credentials in tool args.
@@ -85,10 +87,18 @@ async function runChatTools<T>(request: Request, work: (client: Client) => Promi
       const protocol = outbound.headers.get("mcp-protocol-version");
       if (protocol) secured.headers.set("mcp-protocol-version", protocol);
       auditStage("transport");
-      return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
+      return traceStage("mcp.http", () => {
+        if (process.env.VERCEL_ENV === "preview") {
+          const carrier: Record<string, string> = {};
+          propagation.inject(context.active(), carrier);
+          if (carrier.traceparent) secured.headers.set("traceparent", carrier.traceparent);
+          if (carrier.tracestate) secured.headers.set("tracestate", carrier.tracestate);
+        }
+        return fetch(secured, { signal: AbortSignal.any([signal, outbound.signal, request.signal]) });
+      });
     },
   });
-  try { await client.connect(transport); signal.throwIfAborted(); return await work(client); }
+  try { await traceStage("mcp.connect", () => client.connect(transport)); signal.throwIfAborted(); return await work(client); }
   finally { await client.close(); }
 }
 

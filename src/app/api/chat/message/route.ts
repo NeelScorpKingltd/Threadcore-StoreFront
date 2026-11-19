@@ -1,3 +1,4 @@
+import { traceStage, traceMetric } from "@/lib/chat/tracing";
 import { chatBody, runAgent, type ChatEvent } from "@/lib/chat/agent";
 import { withChatTools } from "@/lib/chat/adapter";
 import { readBoundaryConfig } from "@/lib/mcp-auth/config";
@@ -28,14 +29,19 @@ export async function POST(request: Request) {
       const stream = new ReadableStream({
         start(controller) {
           let sent = 0;
+          let firstText = false;
+          const started = performance.now();
           const emit = (event: ChatEvent) => {
             signal.throwIfAborted();
             const bytes = encoder.encode(JSON.stringify(event) + "\n");
             sent += bytes.byteLength;
             if (sent > 256 * 1024) throw new Error("OUTPUT_LIMIT");
+            if (event.type === "text" && !firstText) {
+              traceMetric("chat.first_text_ms", performance.now() - started); firstText = true;
+            }
             controller.enqueue(bytes);
           };
-          void withChatTools(request, (client) => runAgent(client, key, parsed.data, signal, emit), 95_000)
+          void traceStage("chat.turn", () => withChatTools(request, (client) => runAgent(client, key, parsed.data, signal, emit), 95_000))
             .then(() => { auditAgentOutcome(signal.aborted ? "aborted" : "completed"); if (!signal.aborted) emit({ type: "done" }); })
             .catch(() => {
               auditAgentOutcome(signal.aborted ? "aborted" : "unavailable");
