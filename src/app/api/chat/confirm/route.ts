@@ -5,7 +5,7 @@ import { withChatCapacity } from "@/lib/chat/concurrency";
 import { authenticationErrorResponse } from "@/lib/mcp-auth/http";
 import { decide, listPending } from "@/lib/mcp/pending";
 import { confirmationBody } from "@/lib/mcp/confirmation-schema";
-import { DomainError } from "@/lib/domain/errors";
+import { DomainError, StaleProposalError } from "@/lib/domain/errors";
 import { enforceChatRateLimit } from "@/lib/chat/rate-limit";
 import { ChatHttpError, chatHttpErrorResponse, limitedJsonResponse, readLimitedJson } from "@/lib/chat/http-limits";
 export const runtime = "nodejs";
@@ -37,6 +37,7 @@ async function execute(request: Request, signal: AbortSignal) {
     return limitedJsonResponse(result);
   } catch (error) {
     if (error instanceof ChatHttpError) return chatHttpErrorResponse(error);
+    if (error instanceof StaleProposalError) return Response.json({ error: { code: "STALE_PROPOSAL" } }, { status: 409, headers });
     if (error instanceof DomainError) return Response.json({ error: error.message }, { status: 409, headers });
     return authenticationErrorResponse(error);
   }

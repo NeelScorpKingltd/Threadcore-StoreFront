@@ -1,7 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { address, customerId, text, uuid } from "@/lib/domain/validation";
-import { DomainError } from "@/lib/domain/errors";
+import { DomainError, StaleProposalError } from "@/lib/domain/errors";
 import { customerTransaction, readTransaction, fingerprint } from "@/lib/domain/mutation";
 import * as addresses from "@/services/user.service";
 import * as orders from "@/services/order.service";
@@ -69,7 +69,7 @@ export async function decide(user: string, id: string, confirm: boolean) {
     const action = row.action;
     if (action.operation === "edit") {
       const saved = (await addresses.getAddresses(user)).find(a => a.id === action.addressId);
-      if (!saved || fingerprint([saved]) !== action.before) throw new DomainError("Address changed. Request a new proposal.");
+      if (!saved || fingerprint([saved]) !== action.before) throw new StaleProposalError("Address changed. Request a new proposal.");
       await addresses.editAddress(user, action.addressId, action, id);
     }
     else if (action.operation === "add") await addresses.addAddress(user, action, id);
