@@ -154,7 +154,7 @@ export async function getUserOrders(userId: string, page: PageInput = {}) {
   return db.select({
     id: orders.id, orderNumber: orders.orderNumber, totalAmountCents: orders.totalAmountCents,
     status: orders.status, createdAt: orders.createdAt, updatedAt: orders.updatedAt,
-    itemCount: sql<number>`(select coalesce(sum(${orderItems.quantity}), 0)::int from ${orderItems} where ${orderItems.orderId} = ${orders.id})`,
+    itemCount: sql<number>`(select coalesce(sum(order_items.quantity), 0)::int from order_items where order_items.order_id = orders.id)`,
   }).from(orders).where(eq(orders.userId, userId))
     .orderBy(desc(orders.createdAt), desc(orders.id)).limit(limit).offset(offset);
   });
