@@ -106,7 +106,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
                 return { ...message, results: [...results, { tool: item.tool, data: item.data }] };
               }));
             }
-            if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); setStatus("Use the private form in this conversation."); }
+            if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); if (item.operation) { setOperation(item.operation); setFields({}); } setStatus("Use the private form in this conversation."); }
             if (item.type === "error") throw new Error(item.message);
             if (item.type === "done") complete = true;
           }
@@ -155,7 +155,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
     finally { if (generation.current === current) { setBusy(false); active.current = null; } }
   }
 
-  const names = privateTool === "addresses_write" ? operation === "delete" ? ["addressId"] : [...(operation === "edit" ? ["addressId"] : []), "street", "city", "state", "postalCode", "country"]
+  const names = privateTool === "addresses_write" ? operation === "delete" ? [] : ["street", "city", "state", "postalCode", "country"]
     : privateTool === "orders_write" ? ["orderId", "reason"] : privateTool === "orders_read" ? ["orderId"] : [];
 
   const section = privateTool.startsWith("addresses") ? "addresses" : privateTool.startsWith("orders") ? "orders" : "profile";
@@ -178,7 +178,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   return <div className={styles.page}>
     <dialog ref={approvalDialog} className={styles.approvalDialog} aria-labelledby="approval-title" onCancel={() => setActions([])}>
       <div className={styles.panelTitle}><h2 id="approval-title">Review your changes</h2><button type="button" className={styles.textButton} aria-label="Close approval popup" onClick={() => setActions([])}><X size={18} /></button></div>
-      {actions.map(action => <McpConfirmationCard key={action.id} id={action.id} preview={action.preview} initialStatus={action.status} onDecision={() => { setPrivateResult(undefined); setFields({}); router.refresh(); }} />)}
+      {actions.map(action => <McpConfirmationCard key={action.id} id={action.id} preview={action.preview} initialStatus={action.status} onDecision={() => { setActions(previous => previous.filter(saved => saved.id !== action.id)); setWorkspaceOpen(false); setPrivateResult(undefined); setFields({}); router.refresh(); }} />)}
     </dialog>
     <header className={styles.topline}>
       <div className={styles.brandline}><div className={styles.brandMark}><Sparkles size={20} strokeWidth={1.4} /></div><div><p className={styles.eyebrow}>ThreadCore / Personal assistant</p><p className={styles.subheading}>A little guidance. A better find.</p></div></div>
@@ -211,10 +211,10 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
           {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
             <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}{section === "orders" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("orders_write"); setFields({}); setPrivateResult(undefined); }}>Cancel an order</button>}</div>
             <div className={styles.form}>
-              {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => setOperation(event.target.value)}><option value="add">Add a new address</option><option value="edit">Edit a saved address</option><option value="delete">Remove a saved address</option></select></>}
+              {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => { setOperation(event.target.value); if (event.target.value !== "add") { setPrivateTool("addresses_read"); setPrivateResult(undefined); setFields({}); } }}><option value="add">Add a new address</option><option value="edit">Edit a saved address</option><option value="delete">Remove a saved address</option></select></>}
               {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
               {privateTool === "addresses_write" && operation !== "delete" && <label><input type="checkbox" checked={fields.isDefault === "true"} disabled={busy} onChange={event => setFields({ ...fields, isDefault: String(event.target.checked) })} /> Use as default address</label>}
-              <button className={styles.primary} disabled={busy} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
+              <button className={styles.primary} disabled={busy || (privateTool === "addresses_write" && operation !== "add" && !fields.addressId)} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
             </div>
             {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
             <button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)}><RefreshCw size={11} />Review pending changes</button>
