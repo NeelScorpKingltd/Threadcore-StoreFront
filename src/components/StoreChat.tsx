@@ -26,6 +26,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const [operation, setOperation] = useState("add");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [privateResult, setPrivateResult] = useState<unknown>();
+  const [privateError, setPrivateError] = useState("");
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const workspace = useRef<HTMLElement>(null);
   useEffect(() => { if (workspaceOpen) workspace.current?.scrollIntoView({ block: "nearest" }); }, [workspaceOpen, privateTool]);
@@ -50,7 +51,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   function endSession() {
     generation.current++; active.current?.abort(); active.current = null;
     setKey(""); setMessages([]); setText(""); setPrivateResult(undefined); setActions([]); setFields({}); setBusy(false); setStatus("");
-    setKeyOpen(true); setWorkspaceOpen(false);
+    setKeyOpen(true); setWorkspaceOpen(false); setPrivateError("");
   }
   useEffect(() => {
     const { data: { subscription } } = createClient().auth.onAuthStateChange((_event, session) => {
@@ -121,6 +122,15 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
 
   async function privateRequest(confirmations = false) {
     if (busy) return;
+    setPrivateError("");
+    if (!confirmations && privateTool.endsWith("_write")) {
+      const missing = names.filter(name => name !== "country" && !fields[name]?.trim());
+      if (missing.length) {
+        setPrivateResult(undefined);
+        setPrivateError(`Form incomplete. Please complete ${missing.map(name => labels[name].toLowerCase()).join(", ")}.`);
+        return;
+      }
+    }
     const current = generation.current;
     const controller = new AbortController(); active.current = controller; setBusy(true);
     try {
@@ -162,6 +172,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   const connected = Boolean(key || stagingKeyAvailable);
   const labels: Record<string, string> = { addressId: "Address reference", street: "Street address", city: "City", state: "State / region", postalCode: "Postal code", country: "Country", orderId: "Order reference", reason: "Reason for cancellation" };
   function chooseAction(tool: string, id: string, saved?: Record<string, unknown>) {
+    setPrivateError("");
     if (tool === "orders_write") {
       setPrivateTool("orders_write"); setFields({ orderId: id, orderNumber: typeof saved?.orderNumber === "string" ? saved.orderNumber : "Selected order" }); setPrivateResult(undefined); return;
     }
@@ -174,6 +185,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
     setOperation("delete"); setPrivateResult(undefined);
   }
   function chooseSection(name: string) {
+    setPrivateError("");
     setPrivateTool((name === "addresses" ? "addresses_read" : name === "orders" ? "orders_read" : "profile_read"));
     setFields({}); setPrivateResult(undefined);
   }
@@ -214,10 +226,11 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
           {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
             <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}</div>
             <div className={styles.form}>
+              {privateError && <p role="alert" className={styles.resultNote}>{privateError}</p>}
               {privateTool === "orders_read" && fields.cancellableOnly === "true" && <p className={styles.resultNote}>Select an order below to request cancellation. Showing up to 50 recent cancellable orders.</p>}
               {privateTool === "orders_write" && <p className={styles.resultNote}>Cancel {fields.orderNumber || "selected order"}</p>}
               {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => { setOperation(event.target.value); if (event.target.value !== "add") { setPrivateTool("addresses_read"); setPrivateResult(undefined); setFields({}); } }}><option value="add">Add a new address</option><option value="edit">Edit a saved address</option><option value="delete">Remove a saved address</option></select></>}
-              {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
+              {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => { setPrivateError(""); setFields({ ...fields, [name]: event.target.value }); }} /></label>)}
               {privateTool === "addresses_write" && operation !== "delete" && <label><input type="checkbox" checked={fields.isDefault === "true"} disabled={busy} onChange={event => setFields({ ...fields, isDefault: String(event.target.checked) })} /> Use as default address</label>}
               <button className={styles.primary} disabled={busy || (privateTool === "addresses_write" && operation !== "add" && !fields.addressId) || (privateTool === "orders_write" && !fields.orderId)} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
             </div>
