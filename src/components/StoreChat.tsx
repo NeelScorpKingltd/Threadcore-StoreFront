@@ -93,7 +93,19 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
               setStatus(`${toolLabels[item.tool] || "Working on your request"}…`);
               if (item.tool === "cart_write" || item.tool === "cart_read") refreshCart = true;
             }
-            if (item.type === "result") setMessages((previous) => previous.map((message, index) => index === previous.length - 1 ? { ...message, results: [...(message.results ?? []), { tool: item.tool, data: item.data }] } : message));
+            if (item.type === "cart_changed") {
+              setMessages(previous => previous.map(message => ({
+                ...message,
+                results: message.results?.filter(result => result.tool !== "cart_read"),
+              })));
+            }
+            if (item.type === "result") {
+              setMessages(previous => previous.map((message, index) => {
+                if (index !== previous.length - 1) return message;
+                const results = (message.results ?? []).filter(result => item.tool !== "cart_read" || result.tool !== "cart_read");
+                return { ...message, results: [...results, { tool: item.tool, data: item.data }] };
+              }));
+            }
             if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); setStatus("Use the private form in this conversation."); }
             if (item.type === "error") throw new Error(item.message);
             if (item.type === "done") complete = true;
