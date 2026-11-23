@@ -147,15 +147,16 @@ export async function createOrderFromCart(params: {
   });
 }
 
-export async function getUserOrders(userId: string, page: PageInput = {}) {
+export async function getUserOrders(userId: string, page: PageInput & { cancellableOnly?: boolean } = {}) {
   return readTransaction(async (db) => {
   userId = customerId(userId);
   const { limit, offset } = pagination(page);
+  if (page.cancellableOnly !== undefined && typeof page.cancellableOnly !== "boolean") throw new DomainError("Invalid order filter");
   return db.select({
     id: orders.id, orderNumber: orders.orderNumber, totalAmountCents: orders.totalAmountCents,
     status: orders.status, createdAt: orders.createdAt, updatedAt: orders.updatedAt,
     itemCount: sql<number>`(select coalesce(sum(order_items.quantity), 0)::int from order_items where order_items.order_id = orders.id)`,
-  }).from(orders).where(eq(orders.userId, userId))
+  }).from(orders).where(and(eq(orders.userId, userId), page.cancellableOnly ? inArray(orders.status, ["CONFIRMED", "PROCESSING"]) : undefined))
     .orderBy(desc(orders.createdAt), desc(orders.id)).limit(limit).offset(offset);
   });
 }

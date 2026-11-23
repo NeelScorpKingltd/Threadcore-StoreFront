@@ -23,7 +23,7 @@ export const toolSchemas = {
     z.object({ operation: z.literal("delete"), addressId: id }).strict(),
   ]),
   orders_read: z.discriminatedUnion("operation", [
-    z.object({ operation: z.literal("list"), ...page }).strict(),
+    z.object({ operation: z.literal("list"), cancellableOnly: z.boolean().optional(), ...page }).strict(),
     z.object({ operation: z.literal("details"), orderId: id }).strict(),
   ]),
   orders_write: z.object({ operation: z.literal("cancel"), orderId: id, reason: field(500) }).strict()
@@ -34,7 +34,7 @@ export const toolDescriptions = {
   cart_write: "Change your cart. Preserve requestId across retries of the same intent.",
   profile_read: "Read only your display name.",
   addresses_read: "List your saved addresses.",
-  addresses_write: "Propose adding/deleting an address. Requires trusted UI confirmation; proposals become available in Phase 5.",
+  addresses_write: "Propose adding, editing or removing an address. Requires trusted UI confirmation.",
   orders_read: "Read your orders.",
-  orders_write: "Propose cancellation. Trusted confirmation support arrives in Phase 5."
+  orders_write: "Propose order cancellation. Requires trusted UI confirmation."
 };

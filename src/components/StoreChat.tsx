@@ -106,7 +106,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
                 return { ...message, results: [...results, { tool: item.tool, data: item.data }] };
               }));
             }
-            if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); if (item.operation) { setOperation(item.operation); setFields({}); } setStatus("Use the private form in this conversation."); }
+            if (item.type === "private") { setWorkspaceOpen(true); setPrivateTool(item.tool); setPrivateResult(item.data); if (item.operation) { setOperation(item.operation); setFields({}); } if (item.selection === "cancel_order") setFields({ cancellableOnly: "true" }); setStatus("Use the private form in this conversation."); }
             if (item.type === "error") throw new Error(item.message);
             if (item.type === "done") complete = true;
           }
@@ -125,7 +125,7 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
     const controller = new AbortController(); active.current = controller; setBusy(true);
     try {
       let args: Record<string, unknown> = {};
-      if (privateTool === "orders_read") args = { operation: fields.orderId ? "details" : "list", ...(fields.orderId ? { orderId: fields.orderId } : { limit: 10, offset: 0 }) };
+      if (privateTool === "orders_read") args = { operation: fields.orderId ? "details" : "list", ...(fields.orderId ? { orderId: fields.orderId } : { limit: 50, offset: 0, ...(fields.cancellableOnly === "true" ? { cancellableOnly: true } : {}) }) };
       if (privateTool === "orders_write") args = { operation: "cancel", orderId: fields.orderId, reason: fields.reason };
       if (privateTool === "addresses_write") args = operation === "delete" ? { operation, addressId: fields.addressId } : { operation, ...(operation === "edit" ? { addressId: fields.addressId } : {}), street: fields.street, city: fields.city, state: fields.state, postalCode: fields.postalCode, country: fields.country || "India", isDefault: fields.isDefault === "true" };
       const response = await fetch(confirmations ? "/api/chat/confirm" : "/api/chat/tools", {
@@ -156,12 +156,15 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
   }
 
   const names = privateTool === "addresses_write" ? operation === "delete" ? [] : ["street", "city", "state", "postalCode", "country"]
-    : privateTool === "orders_write" ? ["orderId", "reason"] : privateTool === "orders_read" ? ["orderId"] : [];
+    : privateTool === "orders_write" ? ["reason"] : [];
 
   const section = privateTool.startsWith("addresses") ? "addresses" : privateTool.startsWith("orders") ? "orders" : "profile";
   const connected = Boolean(key || stagingKeyAvailable);
   const labels: Record<string, string> = { addressId: "Address reference", street: "Street address", city: "City", state: "State / region", postalCode: "Postal code", country: "Country", orderId: "Order reference", reason: "Reason for cancellation" };
   function chooseAction(tool: string, id: string, saved?: Record<string, unknown>) {
+    if (tool === "orders_write") {
+      setPrivateTool("orders_write"); setFields({ orderId: id, orderNumber: typeof saved?.orderNumber === "string" ? saved.orderNumber : "Selected order" }); setPrivateResult(undefined); return;
+    }
     if (tool === "addresses_edit" && saved) {
       setPrivateTool("addresses_write"); setOperation("edit");
       setFields({ addressId: id, ...Object.fromEntries(["street", "city", "state", "postalCode", "country"].map(key => [key, typeof saved[key] === "string" ? saved[key] : ""])), isDefault: String(saved.isDefault === true) });
@@ -209,12 +212,14 @@ export function StoreChat({ userId, stagingKeyAvailable }: { userId: string | nu
           <div className={styles.panelTitle}><h2>Your workspace</h2><LockKeyhole size={15} strokeWidth={1.4} /></div><p className={styles.panelCopy}>Personal details belong here. Your profile, addresses and orders stay out of the model’s context.</p>
           <div className={styles.tabs} role="group" aria-label="Account sections">{["profile", "addresses", "orders"].map((name) => <button key={name} className={styles.tab + (section === name ? " " + styles.activeTab : "")} disabled={busy} onClick={() => chooseSection(name)}>{name[0].toUpperCase() + name.slice(1)}</button>)}</div>
           {!signedIn ? <div className={styles.signIn}><LockKeyhole size={23} strokeWidth={1.2} /><h3>A space just for you</h3><p>Sign in to see your account, manage saved addresses and review your orders.</p><Link href="/login">Sign in to continue <LogIn size={13} /></Link></div> : <>
-            <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}{section === "orders" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("orders_write"); setFields({}); setPrivateResult(undefined); }}>Cancel an order</button>}</div>
+            <div className={styles.buttonRow}>{section === "addresses" && <button className={styles.secondary} disabled={busy} onClick={() => { setPrivateTool("addresses_write"); setOperation("add"); setFields({}); setPrivateResult(undefined); }}><Plus size={13} />Add address</button>}</div>
             <div className={styles.form}>
+              {privateTool === "orders_read" && fields.cancellableOnly === "true" && <p className={styles.resultNote}>Select an order below to request cancellation. Showing up to 50 recent cancellable orders.</p>}
+              {privateTool === "orders_write" && <p className={styles.resultNote}>Cancel {fields.orderNumber || "selected order"}</p>}
               {privateTool === "addresses_write" && <><label className={styles.fieldLabel} htmlFor="address-operation">What would you like to do?</label><select id="address-operation" className={styles.input} disabled={busy} value={operation} onChange={(event) => { setOperation(event.target.value); if (event.target.value !== "add") { setPrivateTool("addresses_read"); setPrivateResult(undefined); setFields({}); } }}><option value="add">Add a new address</option><option value="edit">Edit a saved address</option><option value="delete">Remove a saved address</option></select></>}
               {names.map((name) => <label key={name}><span className={styles.fieldLabel}>{labels[name]}{name === "orderId" && privateTool === "orders_read" ? " (optional)" : ""}</span><input className={styles.input} autoComplete="off" value={fields[name] || ""} maxLength={name === "reason" ? 500 : 300} disabled={busy} placeholder={name === "orderId" && privateTool === "orders_read" ? "Leave blank to see recent orders" : name === "country" ? "India" : ""} onChange={(event) => setFields({ ...fields, [name]: event.target.value })} /></label>)}
               {privateTool === "addresses_write" && operation !== "delete" && <label><input type="checkbox" checked={fields.isDefault === "true"} disabled={busy} onChange={event => setFields({ ...fields, isDefault: String(event.target.checked) })} /> Use as default address</label>}
-              <button className={styles.primary} disabled={busy || (privateTool === "addresses_write" && operation !== "add" && !fields.addressId)} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
+              <button className={styles.primary} disabled={busy || (privateTool === "addresses_write" && operation !== "add" && !fields.addressId) || (privateTool === "orders_write" && !fields.orderId)} onClick={() => privateRequest()}>{privateTool.endsWith("_write") ? "Prepare for review" : section === "profile" ? "View my profile" : section === "addresses" ? "View saved addresses" : "View my orders"}<ArrowUpRight size={13} /></button>
             </div>
             {privateResult !== undefined && <div className={styles.privateResult}><ChatResult tool={privateTool} data={privateResult} onAction={chooseAction} /></div>}
             <button className={styles.textButton} disabled={busy} onClick={() => privateRequest(true)}><RefreshCw size={11} />Review pending changes</button>
