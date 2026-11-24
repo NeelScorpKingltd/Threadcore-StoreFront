@@ -10,7 +10,7 @@ import { createAuthenticationBoundary } from "./core";
 import { auditStage } from "@/lib/chat/audit";
 
 // No 'use server' directive: these functions must never become public Server Actions.
-// Called by the future same-origin chat backend and private MCP route only.
+// Called by the same-origin chat backend and private MCP route only.
 export function privateMcpAuthentication() {
   auditStage("configuration");
   const config = readBoundaryConfig();

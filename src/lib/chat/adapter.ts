@@ -123,7 +123,7 @@ export function presentToolResult(tool: ToolName, result: Record<string, unknown
     kind: loginRequired ? "login_required" : result.isError ? "error" : "tool_result",
     tool,
     uiResult: result,
-    // The future model gets no address/order bodies by default. UI rendering is
+    // The model receives no address/order bodies. UI rendering is
     // separate from conversation storage; this adapter writes no logs/history.
     modelResult: privateData ? { status: result.isError ? "failed" : "shown_in_private_ui" }
       : tool === "cart_read" ? projectCartReadForModel(result)

@@ -1,6 +1,6 @@
 # ThreadCore
 
-Updated 2026-11-19. ThreadCore is a Next.js 16 / React 19 apparel storefront with Supabase Authentication, PostgreSQL through Drizzle, a private MCP endpoint and an OpenAI shopping assistant.
+ThreadCore is a Next.js 16 / React 19 apparel storefront with Supabase Authentication, PostgreSQL through Drizzle, a private MCP endpoint and an OpenAI shopping assistant.
 
 ## Current features
 
@@ -8,10 +8,10 @@ Updated 2026-11-19. ThreadCore is a Next.js 16 / React 19 apparel storefront wit
 - Signed-in carts, checkout, order history and cancellation, profile editing and saved addresses. Checkout locks inventory and validates stock transactionally. Cancellation restores inventory once.
 - Supabase SSR authentication, session refresh and validated internal redirects.
 - A floating chat bubble across storefront pages. It opens to approximately one-third of desktop width and nearly full width on phones. Collapse preserves the current in-memory session. Visiting /chat opens the assistant over the collection.
-- Streamed English chat, suggestions, activity indicators, Stop, product/cart cards and a private account workspace.
+- Streamed English chat, suggestions, activity indicators, Stop, product/cart cards and private account forms inside the conversation.
 - Production BYOK through a password field. Keys and conversation state stay in client memory for the current mounted session. Preview can use a server-only staging key.
 - Eight MCP tools for catalogue, cart, profile, addresses and orders. Guest chat can browse products. Customer data and mutations require verified login.
-- Address additions/removals and order cancellations use saved proposals. A modal displays the saved preview with Accept/Decline. Closing it leaves the proposal pending. Pending proposals can be reopened.
+- Address additions/edits/removals and order cancellations use saved proposals. A modal displays the saved preview with Accept/Decline. Closing it leaves the proposal pending. Pending proposals can be reopened.
 - Product and minimized cart data can reach the model. Private account results and proposal capabilities stay in the authenticated UI flow.
 
 ## Implementation
@@ -20,7 +20,7 @@ Browser -> /api/chat/message -> bounded OpenAI Responses loop -> private MCP ada
 
 Private forms call /api/chat/tools. Sensitive changes create durable proposals. Only a browser decision through /api/chat/confirm can execute them after ownership, expiry and business-state checks.
 
-The backend validates tool schemas, verifies Supabase user/session state, signs short-lived delegated credentials and checks exact origins. Streamed request/response caps, shared rate limits, process admission limits, deadlines, SQL timeouts, mutation receipts and redacted operational events are implemented.
+The backend validates tool schemas, verifies Supabase user/session state, signs short-lived delegated credentials and checks exact origins. Streamed request/response caps, shared rate limits, process admission limits, deadlines, SQL timeouts, mutation receipts and redacted operational events are implemented. Preview-only tracing links LLM/MCP/authentication/database work. Shared schemas validate arguments locally and MCP connects on demand.
 
 ## Code structure
 
@@ -37,21 +37,18 @@ The backend validates tool schemas, verifies Supabase user/session state, signs 
 
 ## Local development
 
-Use Node 22 and npm. Run npm ci, copy .env.example to .env.local and configure the correct isolated database/auth project and exact local origin. Configure the trusted Supabase CA with THREADCORE_DB_CA_PEM when required. Apply reviewed staging migrations according to DEPLOYMENT.md.
+Use Node 22 and npm. Run npm ci, copy .env.example to .env.local and configure the correct isolated database/auth project and exact local origin. Configure the trusted Supabase CA with THREADCORE_DB_CA_PEM when required. Review the SQL in migrations/ and apply it to an isolated staging database before deploying code that requires it. The build does not apply migrations.
 
-Run npm run dev. If the local Turbopack CSS worker fails, use npm run dev -- --webpack. The last local preview used port 3032. Enter your own OpenAI key in the assistant.
+Run npm run dev. If the local Turbopack CSS worker fails, use npm run dev -- --webpack. Enter your own OpenAI key in the assistant.
 
 ## Verification and cleanup
 
 Run npm run lint, npx tsc --noEmit --incremental false, npm run security:source, npm run security:history and npm run build:secure. For the local webpack workaround run npm run build -- --webpack followed by npm run security:artifacts.
 
-At the user's request, cleanup removed seven test suites, the /mcp-test developer route and component, the disposable local playground, its embedded PostgreSQL dependency, empty demo text and unused temporary schema output. Associated npm commands and CI test calls were removed. Automated regression suites are therefore absent. The scanner's internal self-check remains part of the operational security gate. Earlier suite results are historical evidence only.
+Automated behavioral regression suites are currently absent. Security scans are heuristic and require review alongside live staging acceptance.
 
-Instruction documents, phase records, reviewed migrations, active UI primitives and operational utilities are retained. Phase documents describe earlier milestones. MCP_PRODUCTION_READINESS.md records current remaining work.
+## Repository contents
 
-## Documentation
+The repository includes application source, configuration templates, reviewed migration SQL, security utilities and CI configuration.
 
-- [Deployment](DEPLOYMENT.md) covers environment isolation, migration order, hosting and rollback.
-- [Chat](CHAT.md) covers session keys, data flow, tool handoffs and validation.
-- [Security operations](SECURITY_OPERATIONS.md) covers TLS, runtime limits, scans and log setup.
-- [Readiness and remaining work](MCP_PRODUCTION_READINESS.md) distinguishes implementation from live verification and production release.
+Detailed operational runbooks, release records, planning documents, local environment values, certificates and database backups are maintained outside Git tracking. Maintainers should consult their local deployment and security runbooks before changing production.
