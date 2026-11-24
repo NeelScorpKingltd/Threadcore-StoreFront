@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutationRequest } from "@/lib/use-mutation-request";
+import { usePathname } from "next/navigation";
 
 import React, { useState, useTransition } from "react";
 import { addToCart } from "@/app/actions/cart.actions";
@@ -17,6 +18,7 @@ export function QuickAddControl({
   inventoryCount,
 }: QuickAddControlProps) {
   const mutation = useMutationRequest();
+  const pathname = usePathname();
   const [quantity, setQuantity] = useState(1);
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export function QuickAddControl({
     if (isSoldOut || isPending) return;
 
     startTransition(async () => {
-      const res = await addToCart(productId, quantity, mutation.requestId("add", [productId, quantity]));
+      const res = await addToCart(productId, quantity, mutation.requestId("add", [productId, quantity]), pathname);
       if (res.success) {
         mutation.complete("add");
         setFeedback("Added");

@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSafeRedirectPath } from "@/lib/supabase/redirect";
 
 export async function signIn(formData: FormData): Promise<void> {
+  const nextValue = formData.get("next");
+  const next = getSafeRedirectPath(typeof nextValue === "string" ? nextValue : null);
   const supabase = await createClient();
 
   const email = formData.get("email") as string;
@@ -16,11 +19,11 @@ export async function signIn(formData: FormData): Promise<void> {
   });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    redirect(`/login?error=${encodeURIComponent(error.message)}&next=${encodeURIComponent(next)}`);
   }
 
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(next);
 }
 
 export async function signUp(formData: FormData): Promise<void> {
