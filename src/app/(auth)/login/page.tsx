@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { signIn } from "@/app/actions/auth.actions";
+import { getSafeRedirectPath } from "@/lib/supabase/redirect";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string; error?: string }>;
+  searchParams: Promise<{ message?: string; error?: string; next?: string }>;
 }) {
-  const { message, error } = await searchParams;
+  const { message, error, next } = await searchParams;
 
   return (
     <div className="space-y-8">
@@ -34,6 +35,7 @@ export default async function LoginPage({
 
       {/* Form */}
       <form action={signIn} className="space-y-5">
+        <input type="hidden" name="next" value={getSafeRedirectPath(next)} />
         <div className="space-y-1.5">
           <label
             htmlFor="email"

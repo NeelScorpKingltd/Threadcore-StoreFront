@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutationRequest } from "@/lib/use-mutation-request";
+import { usePathname } from "next/navigation";
 
 import React, { useState, useTransition } from "react";
 import { addToCart } from "@/app/actions/cart.actions";
@@ -16,6 +17,7 @@ export function AddToCartButton({
   inventoryCount,
 }: AddToCartButtonProps) {
   const mutation = useMutationRequest();
+  const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -28,7 +30,7 @@ export function AddToCartButton({
     setIsError(false);
 
     startTransition(async () => {
-      const res = await addToCart(productId, 1, mutation.requestId("add", [productId, 1]));
+      const res = await addToCart(productId, 1, mutation.requestId("add", [productId, 1]), pathname);
       if (res.success) {
         mutation.complete("add");
         setStatusMessage("Added to bag");

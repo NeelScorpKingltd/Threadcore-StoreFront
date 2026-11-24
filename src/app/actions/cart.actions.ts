@@ -3,13 +3,17 @@
 import { publicError } from "@/lib/domain/errors";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getSafeRedirectPath } from "@/lib/supabase/redirect";
 import { createClient } from "@/lib/supabase/server";
 import * as CartService from "@/services/cart.service";
 
-async function getAuthUserId(): Promise<string> {
+async function getAuthUserId(returnPath = "/cart"): Promise<string> {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error("Unauthorized");
+  if (error || !user) {
+    redirect(`/login?next=${encodeURIComponent(getSafeRedirectPath(returnPath, "/cart"))}`);
+  }
   return user.id;
 }
 
@@ -18,8 +22,8 @@ export async function getCart() {
   return CartService.getCart(userId);
 }
 
-export async function addToCart(productId: string, quantity: number, requestId: string) {
-  const userId = await getAuthUserId();
+export async function addToCart(productId: string, quantity: number, requestId: string, returnPath = "/") {
+  const userId = await getAuthUserId(returnPath);
   try {
     await CartService.addToCart(userId, productId, quantity, requestId);
     revalidatePath("/", "layout");
