@@ -2,6 +2,8 @@
 
 ThreadCore is a Next.js 16 / React 19 apparel storefront with Supabase Authentication, PostgreSQL through Drizzle, a private MCP endpoint and an OpenAI shopping assistant.
 
+Live storefront: [threadcore-beta.vercel.app](https://threadcore-beta.vercel.app/).
+
 ## Current features
 
 - Catalogue filtering, product details, stock indicators and quick cart controls.
