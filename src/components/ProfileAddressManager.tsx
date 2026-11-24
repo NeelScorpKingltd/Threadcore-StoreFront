@@ -1,11 +1,13 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useState, useTransition } from "react";
 import { addAddress, deleteAddress } from "@/app/actions/user.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Trash2, MapPin, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, MapPin } from "lucide-react";
 
 interface Address {
   id: string;
@@ -22,6 +24,7 @@ export function ProfileAddressManager({
 }: {
   initialAddresses: Address[];
 }) {
+  const mutation = useMutationRequest();
   const [addresses, setAddresses] = useState<Address[]>(initialAddresses);
   const [showAddForm, setShowAddForm] = useState(false);
   const [street, setStreet] = useState("");
@@ -46,9 +49,10 @@ export function ProfileAddressManager({
         postalCode,
         country,
         isDefault,
-      });
+      }, mutation.requestId("address.add", [street, city, state, postalCode, country, isDefault]));
 
       if (res.success && res.address) {
+        mutation.complete("address.add");
         setAddresses((prev) => [res.address!, ...prev]);
         setShowAddForm(false);
         setStreet("");
@@ -64,8 +68,9 @@ export function ProfileAddressManager({
 
   const handleDelete = (id: string) => {
     startTransition(async () => {
-      const res = await deleteAddress(id);
+      const res = await deleteAddress(id, mutation.requestId("address.delete", [id]));
       if (res.success) {
+        mutation.complete("address.delete");
         setAddresses((prev) => prev.filter((a) => a.id !== id));
       }
     });

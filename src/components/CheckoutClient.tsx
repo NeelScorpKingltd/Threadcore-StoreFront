@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/utils";
@@ -43,6 +45,7 @@ export function CheckoutClient({
   subtotalCents,
 }: CheckoutClientProps) {
   const router = useRouter();
+  const mutation = useMutationRequest();
   const [addresses, setAddresses] = useState<Address[]>(initialAddresses);
   const [selectedAddressId, setSelectedAddressId] = useState<string>(
     initialAddresses.find((a) => a.isDefault)?.id ?? initialAddresses[0]?.id ?? ""
@@ -72,9 +75,10 @@ export function CheckoutClient({
         postalCode,
         country,
         isDefault: addresses.length === 0,
-      });
+      }, mutation.requestId("address.add", [street, city, state, postalCode, country, addresses.length === 0]));
 
       if (res.success && res.address) {
+        mutation.complete("address.add");
         setAddresses((prev) => [res.address!, ...prev]);
         setSelectedAddressId(res.address.id);
         setShowAddForm(false);
@@ -103,9 +107,10 @@ export function CheckoutClient({
         state: selected.state,
         postalCode: selected.postalCode,
         country: selected.country,
-      });
+      }, mutation.requestId("checkout", [selected.street, selected.city, selected.state, selected.postalCode, selected.country]));
 
       if (res.success && "orderId" in res && res.orderId) {
+        mutation.complete("checkout");
         router.push(`/orders/${res.orderId}`);
       } else {
         setErrorMessage(res.message ?? "Failed to place order.");

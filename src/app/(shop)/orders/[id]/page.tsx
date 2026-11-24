@@ -7,7 +7,7 @@ import { getOrderDetails } from "@/services/order.service";
 import { formatPrice } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/OrderStatusBadge";
 import { CancelOrderButton } from "@/components/CancelOrderButton";
-import { ArrowLeft, MapPin, Calendar, CheckCircle } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar } from "lucide-react";
 
 export default async function OrderDetailPage({
   params,

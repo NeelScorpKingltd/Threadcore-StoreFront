@@ -43,6 +43,34 @@ next-env.d.ts
 
 # local product documentation & planning (private)
 PRODUCT_DOCUMENTATION.md
+API_DOCUMENTATION.md
 PRD.md
 AGENTS.md
 docs/
+
+# Local operational runbooks
+/CHAT.md
+/DEPLOYMENT.md
+/MCP.md
+/SECURITY_OPERATIONS.md
+
+# Local agent/account configuration
+/.codex/
+/.agents/
+/.aws/
+
+# Local backup and temporary output
+/tmp/
+/backups/
+/Threadcore-Backups/
+*.dump
+*.backup
+*.sql.gz
+*.contents.txt
+
+# Local certificates and private key material
+*.crt
+*.cer
+*.key
+*.p12
+*.pfx

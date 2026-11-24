@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useState, useTransition } from "react";
 import { addToCart } from "@/app/actions/cart.actions";
 import { Plus, Minus, Loader2, Check } from "lucide-react";
@@ -13,8 +15,8 @@ interface QuickAddControlProps {
 export function QuickAddControl({
   productId,
   inventoryCount,
-  productTitle,
 }: QuickAddControlProps) {
+  const mutation = useMutationRequest();
   const [quantity, setQuantity] = useState(1);
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -28,8 +30,9 @@ export function QuickAddControl({
     if (isSoldOut || isPending) return;
 
     startTransition(async () => {
-      const res = await addToCart(productId, quantity);
+      const res = await addToCart(productId, quantity, mutation.requestId("add", [productId, quantity]));
       if (res.success) {
+        mutation.complete("add");
         setFeedback("Added");
         setTimeout(() => setFeedback(null), 2000);
       } else {
@@ -42,7 +45,7 @@ export function QuickAddControl({
   const handleIncrement = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (quantity < inventoryCount) {
+    if (quantity < Math.min(inventoryCount, 99)) {
       setQuantity((q) => q + 1);
     }
   };
@@ -94,7 +97,7 @@ export function QuickAddControl({
         <button
           type="button"
           onClick={handleIncrement}
-          disabled={quantity >= inventoryCount || isPending}
+          disabled={quantity >= Math.min(inventoryCount, 99) || isPending}
           className="flex h-7 w-6 items-center justify-center text-stone-500 hover:text-stone-900 disabled:opacity-30 transition-colors"
           aria-label="Increase quantity"
         >

@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { listProducts } from "@/services/catalog.service";
 import { ProductCard } from "@/components/ProductCard";
+import { pageNumber } from "@/lib/domain/validation";
 
 const CATEGORIES = [
   "All",
@@ -17,17 +18,26 @@ const CATEGORIES = [
 export default async function CatalogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; inStock?: string }>;
+  searchParams: Promise<{ category?: string; inStock?: string; page?: string }>;
 }) {
-  const { category, inStock } = await searchParams;
+  const { category, inStock, page: rawPage } = await searchParams;
+  const page = pageNumber(rawPage);
 
   const activeCategory = category && category !== "All" ? category : undefined;
   const inStockOnly = inStock === "true";
 
-  const products = await listProducts({
+  const result = await listProducts({
     category: activeCategory,
     inStockOnly,
+    limit: 25, offset: (page - 1) * 24,
   });
+  const products = result.slice(0, 24);
+  const pageUrl = (target: number) => {
+    const query = new URLSearchParams({ page: String(target) });
+    if (activeCategory) query.set("category", activeCategory);
+    if (inStockOnly) query.set("inStock", "true");
+    return `/?${query}`;
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -128,6 +138,10 @@ export default async function CatalogPage({
           ))}
         </div>
       )}
+      <nav aria-label="Collection pages" className="mt-8 flex justify-between text-sm">
+        {page > 1 ? <Link href={pageUrl(page - 1)}>Previous</Link> : <span />}
+        {result.length > 24 && page < 4167 && <Link href={pageUrl(page + 1)}>Next</Link>}
+      </nav>
     </div>
   );
 }

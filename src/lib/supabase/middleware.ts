@@ -1,8 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseUrl, getSupabaseAnonKey } from "./config";
+import { isIntegrationApiPath } from "@/lib/mcp-auth/paths";
 
 export async function updateSession(request: NextRequest) {
+  if (isIntegrationApiPath(request.nextUrl.pathname)) {
+    // MCP validates signed backend credentials; chat handlers verify cookies and
+    // origin themselves. Anonymous catalogue use must not become a login redirect.
+    return NextResponse.next({ request });
+  }
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -43,7 +49,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith(path)
   );
 
-  if (!user && !isPublicPath && request.nextUrl.pathname !== "/") {
+  if (!user && !isPublicPath && !["/", "/chat"].includes(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

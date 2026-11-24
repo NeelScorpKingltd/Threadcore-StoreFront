@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationRequest } from "@/lib/use-mutation-request";
+
 import React, { useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +25,7 @@ export interface CartItemRowProps {
 }
 
 export function CartItemRow({ item }: CartItemRowProps) {
+  const mutation = useMutationRequest();
   const [isPending, startTransition] = useTransition();
 
   const handleUpdate = (newQty: number) => {
@@ -31,18 +34,20 @@ export function CartItemRow({ item }: CartItemRowProps) {
       return;
     }
     startTransition(async () => {
-      await updateItemQuantity(item.id, newQty);
+      const result = await updateItemQuantity(item.id, newQty, mutation.requestId("set", [item.id, newQty]));
+      if (result.success) mutation.complete("set");
     });
   };
 
   const handleRemove = () => {
     startTransition(async () => {
-      await removeItem(item.id);
+      const result = await removeItem(item.id, mutation.requestId("remove", [item.id]));
+      if (result.success) mutation.complete("remove");
     });
   };
 
   const lineTotal = item.product.priceCents * item.quantity;
-  const isMaxStock = item.quantity >= item.product.inventoryCount;
+  const isMaxStock = item.quantity >= Math.min(item.product.inventoryCount, 99);
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-b border-stone-200/80">

@@ -6,8 +6,10 @@ import { getUserOrders } from "@/services/order.service";
 import { formatPrice } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/OrderStatusBadge";
 import { Package, ArrowRight } from "lucide-react";
+import { pageNumber } from "@/lib/domain/validation";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const page = pageNumber((await searchParams).page);
   const supabase = await createClient();
   const {
     data: { user },
@@ -17,7 +19,8 @@ export default async function OrdersPage() {
     redirect("/login?message=Sign+in+to+view+your+orders");
   }
 
-  const orders = await getUserOrders(user.id);
+  const result = await getUserOrders(user.id, { limit: 25, offset: (page - 1) * 24 });
+  const orders = result.slice(0, 24);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -98,6 +101,10 @@ export default async function OrdersPage() {
           </div>
         </div>
       )}
+      <nav aria-label="Order pages" className="mt-8 flex justify-between text-sm">
+        {page > 1 ? <Link href={`/orders?page=${page - 1}`}>Previous</Link> : <span />}
+        {result.length > 24 && page < 4167 && <Link href={`/orders?page=${page + 1}`}>Next</Link>}
+      </nav>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use server";
 
+import { publicError } from "@/lib/domain/errors";
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import * as CartService from "@/services/cart.service";
@@ -16,39 +18,39 @@ export async function getCart() {
   return CartService.getCart(userId);
 }
 
-export async function addToCart(productId: string, quantity: number = 1) {
+export async function addToCart(productId: string, quantity: number, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    await CartService.addToCart(userId, productId, quantity);
+    await CartService.addToCart(userId, productId, quantity, requestId);
     revalidatePath("/", "layout");
     return { success: true, message: "Added to bag" };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to add item";
+    const message = publicError(error);
     return { success: false, message };
   }
 }
 
-export async function updateItemQuantity(cartItemId: string, quantity: number) {
+export async function updateItemQuantity(cartItemId: string, quantity: number, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    await CartService.updateItemQuantity(userId, cartItemId, quantity);
+    await CartService.updateItemQuantity(userId, cartItemId, quantity, requestId);
     revalidatePath("/cart");
     return { success: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update quantity";
+    const message = publicError(error);
     return { success: false, message };
   }
 }
 
-export async function removeItem(cartItemId: string) {
+export async function removeItem(cartItemId: string, requestId: string) {
   const userId = await getAuthUserId();
   try {
-    await CartService.removeItem(userId, cartItemId);
+    await CartService.removeItem(userId, cartItemId, requestId);
     revalidatePath("/cart");
     revalidatePath("/", "layout");
     return { success: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to remove item";
+    const message = publicError(error);
     return { success: false, message };
   }
 }

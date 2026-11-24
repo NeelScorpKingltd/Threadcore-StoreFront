@@ -5,28 +5,40 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:secure": "npm run security:source && npm run build && npm run security:artifacts",
     "start": "next start",
     "lint": "eslint",
-    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts",
-    "test:security": "tsx --env-file=.env.local scripts/test-concurrency-and-security.ts",
-    "test:invariants": "tsx --env-file=.env.local scripts/verify-invariants.ts",
-    "test": "npm run test:security && npm run test:invariants"
+    "security:source": "node scripts/scan-security.mjs source",
+    "security:history": "node scripts/scan-security.mjs history",
+    "security:artifacts": "node scripts/scan-security.mjs artifacts",
+    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.223.2",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
+    "@vercel/otel": "^2.3.0",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
+    "jose": "6.2.17",
     "lucide-react": "^1.72.0",
     "next": "16.4.6",
     "postgres": "^4.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tailwind-merge": "^3.7.0"
+    "server-only": "0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "4.6.7"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.5",
-    "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
